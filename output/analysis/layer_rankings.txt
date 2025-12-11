@@ -1,0 +1,16 @@
+HAVOC Layer Importance Ranking (higher S_total = more important)
+---------------------------------------------------------------
+
+Rank  1: Layer 20  |  S_total = 0.3049, S_inter = 0.3049, S_intra = -1.4603e-05, S_JB = 0.0034
+Rank  2: Layer 23  |  S_total = 0.3035, S_inter = 0.3035, S_intra = -1.7524e-05, S_JB = 0.0063
+Rank  3: Layer 21  |  S_total = 0.3013, S_inter = 0.3013, S_intra = -1.5795e-05, S_JB = 0.0039
+Rank  4: Layer 19  |  S_total = 0.3008, S_inter = 0.3008, S_intra = -1.5497e-05, S_JB = 0.0024
+Rank  5: Layer 22  |  S_total = 0.3005, S_inter = 0.3005, S_intra = -1.7405e-05, S_JB = 0.0049
+Rank  6: Layer 24  |  S_total = 0.3000, S_inter = 0.3000, S_intra = -1.7703e-05, S_JB = 0.0068
+Rank  7: Layer 25  |  S_total = 0.2966, S_inter = 0.2966, S_intra = -1.7166e-05, S_JB = 0.0078
+Rank  8: Layer 18  |  S_total = 0.2920, S_inter = 0.2920, S_intra = -1.5259e-05, S_JB = 0.0024
+Rank  9: Layer 26  |  S_total = 0.2891, S_inter = 0.2891, S_intra = -1.8001e-05, S_JB = 0.0078
+Rank 10: Layer 27  |  S_total = 0.2781, S_inter = 0.2781, S_intra = -1.7285e-05, S_JB = 0.0083
+Rank 11: Layer 28  |  S_total = 0.2627, S_inter = 0.2627, S_intra = -1.7107e-05, S_JB = 0.0088
+Rank 12: Layer 29  |  S_total = 0.2561, S_inter = 0.2561, S_intra = -1.7583e-05, S_JB = 0.0093
+Rank 13: Layer 30  |  S_total = 0.2294, S_inter = 0.2294, S_intra = -1.9014e-05, S_JB = 0.0107
