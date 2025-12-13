@@ -1,3 +1,28 @@
+"""
+Module 1 — Activation Extraction
+================================
+
+This module provides two flavours of activation extraction from a
+causal language model (e.g. LLaMA‑3 8B Instruct):
+
+* A static extractor used during the initial pre‑processing step to
+  compute pooled hidden state representations for a fixed set of
+  prompts (benign, direct and composed).  This code was supplied by
+  the user and remains unchanged except for re‑factoring into
+  functions.
+
+* A dynamic extractor, ``extract_activation_dynamic``, which takes an
+  arbitrary prompt and an optional layer index and returns a
+  normalized mean pooled hidden state vector.  This function is
+  required by downstream components (Modules 3 and 7) to compute
+  representations on the fly during the feedback optimization loop.
+
+The static extractor uses hard‑coded dataset paths and writes the
+activations to disk.  The dynamic extractor shares the same model
+and tokenizer to avoid repeated loading.  If CUDA is available a GPU
+is used automatically.
+"""
+
 import os
 import json
 import torch
@@ -13,11 +38,11 @@ assert torch.cuda.is_available(), "CUDA is not available. H100 NVL not detected.
 device = torch.device("cuda")
 
 # ============================================================
-#  FILE PATHS — Hardcoded dataset paths
+#  FILE PATHS — Hardcoded dataset paths for static extraction
 # ============================================================
 alpaca_file    = "/home/tahad/HAVOC/HAVOC/dataset/alpaca_benign.json"
-harmful_file   = "/home/tahad/HAVOC/HAVOC/dataset/advbench_harmful.json"
-jailbreak_file = "/home/tahad/HAVOC/HAVOC/dataset/wildjailbreak_jailbreak.json"
+direct_file   = "/home/tahad/HAVOC/HAVOC/dataset/advbench_direct.json"
+composed_file = "/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_composed.json"
 
 out_dir = "/home/tahad/HAVOC/HAVOC/output/activations"
 os.makedirs(out_dir, exist_ok=True)
@@ -26,6 +51,18 @@ os.makedirs(out_dir, exist_ok=True)
 #  UNIVERSAL JSON PROMPT EXTRACTOR
 # ============================================================
 def extract_prompts(entries):
+    """Extracts the ``prompt`` field from a list of JSON entries.
+
+    Each entry may be either a plain string or a dictionary containing
+    a ``prompt`` key.  If an entry does not conform to either of
+    these formats a ``ValueError`` is raised.
+
+    Args:
+        entries: List of strings or dicts containing prompts.
+
+    Returns:
+        List of prompt strings.
+    """
     results = []
     for item in entries:
         if isinstance(item, str):
@@ -41,45 +78,60 @@ def extract_prompts(entries):
 # ============================================================
 with open(alpaca_file, 'r') as f:
     benign_raw = json.load(f)
-with open(harmful_file, 'r') as f:
-    harmful_raw = json.load(f)
-with open(jailbreak_file, 'r') as f:
-    jailbreak_raw = json.load(f)
+with open(direct_file, 'r') as f:
+    direct_raw = json.load(f)
+with open(composed_file, 'r') as f:
+    composed_raw = json.load(f)
 
 benign_prompts    = extract_prompts(benign_raw)
-harmful_prompts   = extract_prompts(harmful_raw)
-jailbreak_prompts = extract_prompts(jailbreak_raw)
+direct_prompts   = extract_prompts(direct_raw)
+composed_prompts = extract_prompts(composed_raw)
 
 # ============================================================
-#  SUBSAMPLE EACH DATASET TO EXACTLY 5000 (ANCHOR SET)
+#  SUBSAMPLE EACH DATASET TO EXACTLY 500 (ANCHOR SET)
 # ============================================================
 random.seed(42)   # reproducibility across runs
 MAX_ANCHORS = 500
 
 def pick_anchors(data, name):
+    """Subsample or keep a fixed number of prompts for anchor analysis.
+
+    If ``len(data)`` exceeds ``MAX_ANCHORS`` the function randomly
+    samples exactly ``MAX_ANCHORS`` entries.  Otherwise it returns the
+    entire list.  A message is printed describing the operation.
+
+    Args:
+        data: List of prompts.
+        name: Name of the dataset (for logging).
+
+    Returns:
+        List of selected prompts.
+    """
     if len(data) > MAX_ANCHORS:
-        print(f"{name}: {len(data)} → selecting 5000 anchors")
+        print(f"{name}: {len(data)} → selecting {MAX_ANCHORS} anchors")
         return random.sample(data, MAX_ANCHORS)
     else:
         print(f"{name}: only {len(data)} available, using all")
         return data
 
 benign_prompts    = pick_anchors(benign_prompts,    "Benign")
-harmful_prompts   = pick_anchors(harmful_prompts,   "Harmful")
-jailbreak_prompts = pick_anchors(jailbreak_prompts, "Jailbreak")
+direct_prompts   = pick_anchors(direct_prompts,   "direct")
+composed_prompts = pick_anchors(composed_prompts, "composed")
 
 # ============================================================
-#  LOAD LLaMA-3 8B INSTRUCT MODEL
+#  LOAD LLaMA‑3 8B INSTRUCT MODEL
 # ============================================================
 model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
+# Load tokenizer and model once to reuse for both static and dynamic extractions
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.float16,
     device_map={"": "cuda"}
 )
 
+# Extract number of transformer layers (for reference)
 num_layers = len(model.model.layers)
 print("Number of transformer layers:", num_layers)
 
@@ -90,19 +142,25 @@ if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
 # ============================================================
-#  BEST LAYER RANGE FOR ANCHOR ANALYSIS (JBShield-backed)
+#  BEST LAYER RANGE FOR ANCHOR ANALYSIS (JBShield‑backed)
 # ============================================================
 layers_of_interest = list(range(18, 31))   # layers 18–30 inclusive
 
 benign_activations    = {layer: [] for layer in layers_of_interest}
-harmful_activations   = {layer: [] for layer in layers_of_interest}
-jailbreak_activations = {layer: [] for layer in layers_of_interest}
+direct_activations   = {layer: [] for layer in layers_of_interest}
+composed_activations = {layer: [] for layer in layers_of_interest}
 
 # ============================================================
 #  PROCESS BATCH FUNCTION
 # ============================================================
-def process_batch(prompts, storage_dict):
+def _process_batch(prompts, storage_dict):
+    """Compute pooled hidden state activations for a batch of prompts.
 
+    This helper performs tokenization, forwards through the model and
+    mean‑pools the hidden states at each layer of interest.  The
+    resulting normalized vectors are appended to ``storage_dict`` for
+    their respective layers.
+    """
     enc = tokenizer(
         prompts,
         return_tensors="pt",
@@ -121,52 +179,93 @@ def process_batch(prompts, storage_dict):
         return_dict=True
     )
 
-    hidden_states = outputs.hidden_states
+    hidden_states = outputs.hidden_states  # tuple of length num_layers+1
 
     for layer in layers_of_interest:
-
         layer_hidden = hidden_states[layer]  # (batch, seq, dim)
-
         mask = attention_mask.unsqueeze(-1).expand_as(layer_hidden)
         masked_hidden = layer_hidden * mask
-
         lengths = mask.sum(dim=1).clamp(min=1)
         mean_embed = masked_hidden.sum(dim=1) / lengths
-
         norms = torch.norm(mean_embed, dim=1, keepdim=True).clamp(min=1e-8)
         mean_embed_normed = mean_embed / norms
-
         storage_dict[layer].append(mean_embed_normed.cpu().numpy())
 
 # ============================================================
 #  RUN EXTRACTION USING tqdm
 # ============================================================
-batch_size = 16
+def run_static_extraction(batch_size: int = 16) -> None:
+    """Executes the static extraction pipeline over the anchor prompts.
 
-datasets = [
-    ("Benign", benign_prompts, benign_activations),
-    ("Harmful", harmful_prompts, harmful_activations),
-    ("Jailbreak", jailbreak_prompts, jailbreak_activations),
-]
+    Iterates over the benign, direct and composed prompts in batches
+    and populates ``benign_activations``, ``direct_activations`` and
+    ``composed_activations`` with normalized mean pooled hidden state
+    vectors.  Finally writes the results to ``out_dir`` as .npy
+    files.
 
-for name, dataset, storage in datasets:
-    print(f"\n=== Processing {name} (anchor count = {len(dataset)}) ===")
-    for i in tqdm(range(0, len(dataset), batch_size), desc=f"{name} batches"):
-        batch = dataset[i:i+batch_size]
-        process_batch(batch, storage)
+    Args:
+        batch_size: Number of prompts per forward pass.
+    """
+    datasets = [
+        ("Benign", benign_prompts, benign_activations),
+        ("direct", direct_prompts, direct_activations),
+        ("composed", composed_prompts, composed_activations),
+    ]
+    for name, dataset, storage in datasets:
+        print(f"\n=== Processing {name} (anchor count = {len(dataset)}) ===")
+        for i in tqdm(range(0, len(dataset), batch_size), desc=f"{name} batches"):
+            batch = dataset[i:i+batch_size]
+            _process_batch(batch, storage)
+
+    print("\n=== Saving activation matrices ===")
+    for layer in tqdm(layers_of_interest, desc="Saving layers"):
+        B = np.vstack(benign_activations[layer])    if benign_activations[layer] else np.array([])
+        H = np.vstack(direct_activations[layer])   if direct_activations[layer] else np.array([])
+        J = np.vstack(composed_activations[layer]) if composed_activations[layer] else np.array([])
+        np.save(os.path.join(out_dir, f"B_a_layer{layer}.npy"), B)
+        np.save(os.path.join(out_dir, f"H_a_layer{layer}.npy"), H)
+        np.save(os.path.join(out_dir, f"J_a_layer{layer}.npy"), J)
+    print("\nSaved anchor activation outputs to:", out_dir)
 
 # ============================================================
-#  SAVE ACTIVATIONS
+#  DYNAMIC ACTIVATION EXTRACTION
 # ============================================================
-print("\n=== Saving activation matrices ===")
-for layer in tqdm(layers_of_interest, desc="Saving layers"):
+def extract_activation_dynamic(prompt: str, layer: int = 20) -> np.ndarray:
+    """Extract a normalized hidden state vector for an arbitrary prompt.
 
-    B = np.vstack(benign_activations[layer])    if benign_activations[layer] else np.array([])
-    H = np.vstack(harmful_activations[layer])   if harmful_activations[layer] else np.array([])
-    J = np.vstack(jailbreak_activations[layer]) if jailbreak_activations[layer] else np.array([])
+    During the feedback optimization loop (Module 7) it is necessary
+    to compute activations for newly generated candidate prompts.
+    ``extract_activation_dynamic`` mirrors the pooling used in the
+    static extraction: it forwards the prompt through the language
+    model, mean‑pools the hidden states at the requested layer and
+    L2 normalizes the result.
 
-    np.save(os.path.join(out_dir, f"B_a_layer{layer}.npy"), B)
-    np.save(os.path.join(out_dir, f"H_a_layer{layer}.npy"), H)
-    np.save(os.path.join(out_dir, f"J_a_layer{layer}.npy"), J)
+    Args:
+        prompt: A single string prompt to process.
+        layer: Transformer layer index from which to extract the
+            pooled representation.  Defaults to 20 as per the HAVOC
+            paper.
 
-print("\nSaved anchor activation outputs to:", out_dir)
+    Returns:
+        A 1‑D ``np.ndarray`` of shape ``[hidden_dim]`` representing
+        the normalized mean pooled hidden state at the specified layer.
+    """
+    # Tokenize single prompt
+    enc = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=2048)
+    input_ids = enc["input_ids"].to(device)
+    attn = enc["attention_mask"].to(device)
+    # Forward pass with hidden states
+    outputs = model(input_ids=input_ids, attention_mask=attn, output_hidden_states=True, return_dict=True)
+    h = outputs.hidden_states[layer]  # (1, seq, dim)
+    # Pool over sequence length using attention mask
+    mask = attn.unsqueeze(-1).expand_as(h)
+    masked = h * mask
+    length = mask.sum(dim=1).clamp(min=1)
+    mean = masked.sum(dim=1) / length
+    # L2 normalize
+    mean = mean / (mean.norm(dim=1, keepdim=True) + 1e-8)
+    return mean[0].detach().cpu().numpy()
+
+# If this module is invoked directly it will perform the static extraction
+if __name__ == "__main__":
+    run_static_extraction()
