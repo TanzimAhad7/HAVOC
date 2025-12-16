@@ -164,7 +164,7 @@ def main() -> None:
         dataset_name="walledai/AdvBench",
         config_name=None,
         column_name="prompt",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/advbench_harmful.json",
+        output_file="/home/tahad/HAVOC/HAVOC/dataset/advbench_direct.json",
         label="harmful",
         source="walledai/AdvBench",
         id_prefix="h",
