@@ -8,7 +8,7 @@ mean‑pooled hidden state matrices for benign (B), direct (H) and
 composed (J) prompts at a chosen layer, computes the centroids
 ``µ_B``, ``µ_H`` and ``µ_J``, and derives two concept directions:
 
-* ``v_toxic  = µ_H − µ_B`` (captures the transition from benign to
+* ``v_direct  = µ_H − µ_B`` (captures the transition from benign to
   direct behaviour), and
 * ``v_composed = µ_J − µ_H`` (captures the transition from direct to
   composed behaviour).
@@ -76,18 +76,18 @@ def run_concept_construction(layer: int = LAYER) -> None:
     np.save(f"{OUT_DIR}/mu_J_layer{layer}.npy", mu_J)
     print("\nSaved centroids.")
     # Compute concept vectors
-    v_toxic     = mu_H - mu_B        # Benign → direct semantics
+    v_direct     = mu_H - mu_B        # Benign → direct semantics
     v_composed = mu_J - mu_H        # direct → composed semantics
     # Normalize
     def normalize(v):
         return v / (np.linalg.norm(v) + 1e-8)
-    v_toxic_norm     = normalize(v_toxic)
+    v_direct_norm     = normalize(v_direct)
     v_composed_norm = normalize(v_composed)
     # Save
-    np.save(f"{OUT_DIR}/v_toxic_layer{layer}.npy", v_toxic_norm)
+    np.save(f"{OUT_DIR}/v_direct_layer{layer}.npy", v_direct_norm)
     np.save(f"{OUT_DIR}/v_composed_layer{layer}.npy", v_composed_norm)
     print("\nSaved concept vectors:")
-    print(f"v_toxic shape:     {v_toxic_norm.shape}")
+    print(f"v_direct shape:     {v_direct_norm.shape}")
     print(f"v_composed shape: {v_composed_norm.shape}")
     print("\n=== MODULE 2 COMPLETE ===")
     print(f"Concept vectors and centroids saved to:\n{OUT_DIR}")
@@ -110,15 +110,15 @@ def load_concepts(layer: int = LAYER, concept_dir: str = OUT_DIR):
             to ``OUT_DIR``).
 
     Returns:
-        Tuple ``(mu_B, mu_H, mu_J, v_toxic, v_jb)`` where each element
+        Tuple ``(mu_B, mu_H, mu_J, v_direct, v_jb)`` where each element
         is a numpy array.
     """
     mu_B = np.load(os.path.join(concept_dir, f"mu_B_layer{layer}.npy"))
     mu_H = np.load(os.path.join(concept_dir, f"mu_H_layer{layer}.npy"))
     mu_J = np.load(os.path.join(concept_dir, f"mu_J_layer{layer}.npy"))
-    v_toxic = np.load(os.path.join(concept_dir, f"v_toxic_layer{layer}.npy"))
+    v_direct = np.load(os.path.join(concept_dir, f"v_direct_layer{layer}.npy"))
     v_jb    = np.load(os.path.join(concept_dir, f"v_composed_layer{layer}.npy"))
-    return mu_B, mu_H, mu_J, v_toxic, v_jb
+    return mu_B, mu_H, mu_J, v_direct, v_jb
 
 
 if __name__ == "__main__":

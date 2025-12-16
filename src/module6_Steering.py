@@ -13,8 +13,10 @@ which is used in the feedback optimization loop (Module 7).
 
 import os
 import numpy as np
+import torch
+from contextlib import contextmanager
 
-__all__ = ["refine_vectors", "steer_in_direct_space"]
+__all__ = ["refine_vectors", "steer_in_direct_space", "steer_hidden_state"]
 
 # ----------------------------------------
 # Configuration and Paths
@@ -108,6 +110,57 @@ def steer_in_direct_space(fP: np.ndarray, mu_HJ: np.ndarray, W: np.ndarray, lear
     vec_proj = mu_HJ + W.T @ (W @ diff)
     vec_proj = l2_normalize(vec_proj)
     return vec_proj
+
+@contextmanager
+def steer_hidden_state(model: torch.nn.Module, layer_idx: int, v_comp: np.ndarray, alpha: float = 1.0):
+    """Context manager to steer a transformer's hidden state toward a composed direction.
+
+    When generating text, this context manager installs a forward hook on the
+    specified transformer block and nudges the hidden activations at that
+    layer toward a supplied latent concept vector.  This encourages the
+    generator to follow a semantic trajectory aligned with the composed
+    subspace represented by ``v_comp``.
+
+    Only the last token's hidden representation is modified to minimise
+    disruption to preceding context.  The hook is removed automatically
+    when the context exits.
+
+    Args:
+        model: The HuggingFace transformer model whose hidden states will be
+            modified.  The model must expose a ``model.model.layers``
+            attribute representing the stack of transformer blocks.
+        layer_idx: Index of the transformer block to hook (0‑based).
+        v_comp: Numpy array representing the composed/concept direction.
+        alpha: Scaling factor controlling the strength of the intervention.
+
+    Yields:
+        None.  The hook is active during the context and removed afterwards.
+    """
+    # If no vector provided, steering has no effect
+    if v_comp is None:
+        yield
+        return
+    # Access a parameter to infer device and dtype
+    param = next(model.parameters())
+    device = param.device
+    dtype = param.dtype
+    # Convert and normalise the concept direction
+    v = torch.tensor(v_comp, device=device, dtype=dtype)
+    v = v / (v.norm() + 1e-8)
+    # Define the forward hook
+    def _hook(module, inputs, output):
+        if not isinstance(output, torch.Tensor):
+            return output
+        h = output
+        # Add scaled vector to the last position
+        h[:, -1, :] = h[:, -1, :] + alpha * v
+        return h
+    # Register hook on the selected layer
+    handle = model.model.layers[layer_idx].register_forward_hook(_hook)
+    try:
+        yield
+    finally:
+        handle.remove()
 
 if __name__ == "__main__":
     # Example: refine top vectors from Module 5 if fuzzed vectors exist

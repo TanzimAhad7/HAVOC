@@ -6,7 +6,7 @@ This module explores the direct behaviour subspace by sampling
 random candidate directions.  It provides two entry points:
 
 * When run as a script, it generates many candidate vectors,
-  evaluates them via cosine similarity to the direct and jailbreak
+  evaluates them via cosine similarity to the direct and composed
   concept directions, and saves the top candidates to disk.
 
 * A single sample function ``fuzz_sample`` that produces one
@@ -43,7 +43,7 @@ def l2_normalize(v: np.ndarray) -> np.ndarray:
 def _load_vectors(layer_id: int = LAYER_ID):
     """Load concept vectors and PCA components for the specified layer."""
     v_direct = np.load(os.path.join(CONCEPT_DIR, f"v_direct_layer{layer_id}.npy"))
-    v_jb    = np.load(os.path.join(CONCEPT_DIR, f"v_jailbreak_layer{layer_id}.npy"))
+    v_jb    = np.load(os.path.join(CONCEPT_DIR, f"v_composed_layer{layer_id}.npy"))
     v_direct = l2_normalize(v_direct)
     v_jb    = l2_normalize(v_jb)
     comps   = np.load(os.path.join(SUBSPACE_DIR, "direct_subspace_components.npy"))[:TOP_K]
@@ -55,7 +55,7 @@ def _sample_from_subspace(components: np.ndarray) -> np.ndarray:
     return np.sum(weights[:, None] * components, axis=0)
 
 def _score_vector(vec: np.ndarray, v_direct: np.ndarray, v_jb: np.ndarray) -> float:
-    """Compute average cosine similarity to direct and jailbreak directions."""
+    """Compute average cosine similarity to direct and composed directions."""
     s_direct = np.dot(vec, v_direct)
     s_jb    = np.dot(vec, v_jb)
     return float((s_direct + s_jb) / 2.0)
@@ -72,7 +72,7 @@ def fuzz_sample(v_direct: np.ndarray, v_jb: np.ndarray, W: np.ndarray, noise_sca
 
     Args:
         v_direct: direct concept vector (normalized).
-        v_jb: Jailbreak concept vector (normalized).
+        v_jb: composed concept vector (normalized).
         W: 2‑D numpy array containing PCA components (rows).
         noise_scale: Standard deviation of noise added to the base.
 
