@@ -28,7 +28,7 @@ from module7_controller import HAVOC_Controller, MODE, FUZZ_IMPL
 LAYER = 20
 
 # Maximum number of controller iterations per intent
-MAX_ITERS = 25
+MAX_ITERS = 100
 
 # Base path for data and outputs
 BASE = "/home/tahad/HAVOC/HAVOC"
