@@ -78,7 +78,17 @@ def refine_vectors(input_path: str, output_path: str, learning_rate: float = LEA
     np.save(output_path, refined)
     print(f"[Module 6] Saved {len(refined)} refined vectors to {output_path}")
 
-def steer_in_direct_space(fP: np.ndarray, mu_HJ: np.ndarray, W: np.ndarray, learning_rate: float = LEARNING_RATE) -> np.ndarray:
+#def steer_in_direct_space(fP: np.ndarray, mu_HJ: np.ndarray, W: np.ndarray, learning_rate: float = LEARNING_RATE) -> np.ndarray:
+
+def steer_in_direct_space(
+    fP: np.ndarray,
+    v_direct: np.ndarray,
+    v_jb: np.ndarray,
+    mu_HJ: np.ndarray,
+    W: np.ndarray,
+    learning_rate: float = LEARNING_RATE,
+) -> np.ndarray:
+
     """Steer a single activation vector within the direct behaviour subspace.
 
     Given an activation ``fP`` (mean pooled hidden state), this
@@ -98,8 +108,8 @@ def steer_in_direct_space(fP: np.ndarray, mu_HJ: np.ndarray, W: np.ndarray, lear
         Refined and normalized activation vector.
     """
     # Load concept vectors on first call
-    v_direct = np.load(os.path.join(CONCEPT_DIR, f"v_direct_layer{LAYER_ID}.npy"))
-    v_jb    = np.load(os.path.join(CONCEPT_DIR, f"v_composed_layer{LAYER_ID}.npy"))
+    #v_direct = np.load(os.path.join(CONCEPT_DIR, f"v_direct_layer{LAYER_ID}.npy"))
+    #v_jb    = np.load(os.path.join(CONCEPT_DIR, f"v_composed_layer{LAYER_ID}.npy"))
     v_direct = l2_normalize(v_direct)
     v_jb    = l2_normalize(v_jb)
     delta = (v_direct + v_jb) / 2.0

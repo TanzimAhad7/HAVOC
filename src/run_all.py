@@ -1,112 +1,170 @@
 #!/usr/bin/env python3
 """
-run_all.py — Full HAVOC Pipeline Runner
-=======================================
+run_all__patched.py
+===================
 
-This script orchestrates the complete HAVOC workflow.  It executes the
-static phase (Modules 1–4) once to load concept vectors and the direct
-behaviour subspace, then iterates over a dataset of intent prompts,
-running the feedback optimization controller (Module 7) for each
-intent.  Results are saved with filenames reflecting the chosen
-optimization mode and fuzz implementation to aid in reproducibility.
+WHAT THIS SCRIPT DOES
+--------------------
+Runs the FULL HAVOC / HAVOC++ system (Modules 1–10) as a closed-loop
+attacker–defender game with adaptive latent defense.
+
+This is the MAIN experiment of the paper.
+
+EXECUTION ORDER (IMPORTANT)
+--------------------------
+This script MUST be run FIRST.
+
+Correct order:
+    1) run_all__patched.py        ← THIS SCRIPT
+    2) run_all_staticlambda.py
+    3) run_all_nodefense.py
+    4) plot_results.py
+    5) plot_compare_defenses.py
+
+INPUTS
+------
+1) evaluation_intents.json
+   A list of evaluation intents:
+   [
+     {"id": "0", "intent": "..."},
+     {"id": "1", "intent": "..."}
+   ]
+
+2) Precomputed latent geometry
+   Loaded internally via:
+     - module2_concept_vector_construction
+     - module4_direct_representaiton_space
+
+OUTPUT
+------
+Writes:
+    havoc_traces.jsonl
+
+Each line corresponds to ONE intent and contains:
+- per-round attacker risk (r_raw / J_A)
+- per-round defended risk (r_def / J_D)
+- per-round defense strength (lambda)
+- convergence flag
+- full round trajectories
+
+THIS OUTPUT IS USED BY
+---------------------
+- plot_results.py          (single-condition analysis)
+- plot_compare_defenses.py (main comparison figure)
+
+DO NOT PLOT ANYTHING BEFORE THIS SCRIPT FINISHES.
 """
 
-import os
-import json
-import numpy as np
 
-from module1_Activation_Extraction import extract_activation_dynamic
+import json
+import os
+from tqdm import tqdm
+
 from module2_concept_vector_construction import load_concepts
 from module4_direct_representaiton_space import load_direct_space
-from module7_controller import HAVOC_Controller, MODE, FUZZ_IMPL
+from module8_latent_game_orchestrator import LatentGameOrchestrator
+from module9_adaptive_defense_policy import AdaptiveDefensePolicy
+from module10_stability_controller import StabilityController
+import torch
 
-# ============================================================
-# Configuration
-# ============================================================
-
-# Transformer layer to use for activations and concept vectors
-LAYER = 20
-
-# Maximum number of controller iterations per intent
-MAX_ITERS = 100
-
-# Base path for data and outputs
-BASE = "/home/tahad/HAVOC/HAVOC"
-
-# Path to the dataset of direct intent prompts.  Each entry should be a
-# dictionary with a "prompt" key or a plain string.
-INTENT_FILE = f"{BASE}/dataset/advbench_direct.json"
-
-# Output directory.  Results are stored in subfolders based on the
-# current MODE and FUZZ_IMPL values from module7_controller.
-OUTPUT_DIR = f"{BASE}/output/run_mode_{MODE.lower()}__fuzz_{FUZZ_IMPL.lower()}"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+torch.set_grad_enabled(False)
 
 
-def load_direct_intents(path: str) -> list:
-    """Load a list of direct intent prompts from a JSON dataset."""
-    with open(path, "r") as f:
-        raw = json.load(f)
-    intents = [x["prompt"] if isinstance(x, dict) else x for x in raw]
-    return intents
+# ===============================
+# CONFIGURATION
+# ===============================
+OUTPUT_PATH = "havoc_traces.jsonl"
+EVAL_INTENTS_PATH = "evaluation_intents.json"
+
+LAYER = 20              # latent layer used for all activations
+MAX_ROUNDS = 30         # maximum attacker–defender rounds
+
+# Stability controller parameters (Module 10)
+PATIENCE = 5
+TOLERANCE = 0.01
+RISK_CAP = 0.35
+
+# Defense parameters (Module 9)
+RISK_THRESHOLD = 0.40
+LAMBDA_INIT = 0.20
+ADAPT_UP = 1.10
+ADAPT_DOWN = 0.90
 
 
-def main() -> None:
-    intents = load_direct_intents(INTENT_FILE)
-    print(f"[RUN] Loaded {len(intents)} direct intent prompts.")
-    print(f"[RUN MODE] {MODE}")
-    print(f"[RUN FUZZ] {FUZZ_IMPL}")
+def main():
+    """
+    MAIN EXECUTION LOGIC
+    -------------------
+    For each intent:
+      1) Initialize adaptive defender
+      2) Initialize stability controller
+      3) Run the attacker–defender game
+      4) Save full trace to JSONL
+    """
 
-    # Static phase: load concept vectors and direct behaviour subspace
-    print("\n========================")
-    print("STATIC PHASE INITIALISING")
-    print("========================")
-    print("[RUN] Loading concept vectors (Module 2)…")
-    mu_B, mu_H, mu_J, v_direct, v_jb = load_concepts(LAYER)
-    print("[RUN] Loading direct behaviour subspace (Module 4)…")
+    # Load latent geometry (shared across all runs)
+    mu_B, mu_H, mu_J, v_direct, v_jb = load_concepts(layer=LAYER)
     mu_HJ, W = load_direct_space()
-    print("\n[STATIC READY] Concept vectors and subspace loaded.\n")
 
-    # Dynamic phase: optimize each intent
-    results = []
-    for idx, intent in enumerate(intents):
-        print("\n-------------------------------------------")
-        print(f"[TASK {idx + 1}] Intent preview:")
-        print(intent[:120])
-        print("-------------------------------------------")
-        # Compute activation for intent
-        fI = extract_activation_dynamic(intent, layer=LAYER)
-        # Initialize controller
-        controller = HAVOC_Controller(
-            intent=intent,
-            fI=fI,
-            v_direct=v_direct,
-            v_jb=v_jb,
-            mu_HJ=mu_HJ,
-            W=W,
-            max_iters=MAX_ITERS,
-            layer=LAYER
-        )
-        best_prompt, best_score, trajectory = controller.run()
-        print(f"[RESULT] Best score  = {best_score:.4f}")
-        print(f"[RESULT] Best output = {best_prompt}")
-        results.append({
-            "intent": intent,
-            "mode": MODE,
-            "fuzz_impl": FUZZ_IMPL,
-            "best_output": best_prompt,
-            "best_score": float(best_score),
-            "trajectory": trajectory
-        })
-    # Save results
-    out_file = os.path.join(OUTPUT_DIR, "havoc_results.json")
-    with open(out_file, "w") as f:
-        json.dump(results, f, indent=2)
-    print("\n=====================================")
-    print("[RUN COMPLETE]")
-    print("Saved all results to:")
-    print(out_file)
-    print("=====================================")
+    # Load evaluation intents
+    with open(EVAL_INTENTS_PATH, "r") as f:
+        intents = json.load(f)
+
+    # Reset output file
+    if os.path.exists(OUTPUT_PATH):
+        os.remove(OUTPUT_PATH)
+
+    with open(OUTPUT_PATH, "a") as out:
+        for item in tqdm(intents, desc="HAVOC++ Adaptive Defense"):
+            intent_id = item["id"]
+            intent_text = item["intent"]
+
+            # --- Adaptive Defender (Module 9)
+            defender = AdaptiveDefensePolicy(
+                v_direct=v_direct,
+                v_jb=v_jb,
+                mu_HJ=mu_HJ,
+                W=W,
+                risk_threshold=RISK_THRESHOLD,
+                base_strength=LAMBDA_INIT,
+                adapt_up=ADAPT_UP,
+                adapt_down=ADAPT_DOWN,
+            )
+
+            # --- Stability Controller (Module 10)
+            stability = StabilityController(
+                window=PATIENCE,
+                tolerance=TOLERANCE,
+                risk_cap=RISK_CAP,
+                max_rounds=MAX_ROUNDS,
+            )
+
+            # --- Game Orchestrator (Module 8)
+            orchestrator = LatentGameOrchestrator(
+                intents=[intent_text],
+                v_direct=v_direct,
+                v_jb=v_jb,
+                mu_HJ=mu_HJ,
+                W=W,
+                defence_policy=defender,
+                stability_controller=stability,
+                max_iters=MAX_ROUNDS,
+                layer=LAYER,
+                verbose=False,
+            )
+
+            # Run game (returns list with one result)
+            result = orchestrator.run()[0]
+
+            # Write result
+            out.write(json.dumps({
+                "policy_name": "adaptive_defense",
+                "intent_id": intent_id,
+                "convergence": stability.get_convergence_info(),
+                **result
+            }) + "\n")
+
+    print("[OK] Adaptive defense run complete.")
 
 
 if __name__ == "__main__":
