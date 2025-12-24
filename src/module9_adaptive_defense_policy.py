@@ -1,43 +1,38 @@
 """
-Module 9 — Adaptive Defense Policy (HAVOC++)
-============================================
+Module 9 — Adaptive + Learned Defense Policy (HAVOC++)
+======================================================
 
-This module implements an adaptive latent-space defense that actively
-counteracts attacker progress by adjusting the *strength* of latent
-interventions over time.
+This module implements a HYBRID latent defense:
 
-Key idea:
----------
-Treat the defender as a feedback controller operating on a scalar
-risk signal measured from internal activations.
+(1) Online adaptive controller (feedback control)
+(2) Learned memory (experience replay)
 
-The controller:
-- increases intervention strength when risk worsens,
-- decreases strength when risk improves,
-- ignores small noisy fluctuations (deadband),
-- enforces hard bounds on strength (saturation).
-
-This is a robust gain-scheduling controller suitable for unknown,
-non-linear, adversarial dynamics.
+The learned memory enables rapid blocking of previously
+observed jailbreak trajectories while preserving real-time
+adaptation for novel attacks.
 """
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, List, Tuple
 import numpy as np
 
 
 class AdaptiveDefensePolicy:
     """
-    Adaptive latent defense policy for HAVOC++.
+    Adaptive + learned latent defense policy for HAVOC++.
 
-    The policy monitors defended risk across rounds and adaptively
-    adjusts the intervention magnitude λ (strength).
+    The defender operates entirely in latent space and NEVER
+    modifies model weights.
 
-    This is NOT gradient descent.
-    This is NOT model-based control.
+    Two layers of defense:
+    --------------------------------
+    1. Learned memory:
+       - Fast reaction to known attack directions
+       - No online adaptation required
 
-    It is a sign-based, multiplicative gain controller designed
-    for adversarial, non-stationary attackers.
+    2. Online controller:
+       - Adjusts intervention strength λ
+       - Handles unseen or evolving attacks
     """
 
     def __init__(
@@ -51,68 +46,122 @@ class AdaptiveDefensePolicy:
         base_strength: float = 0.05,
         adapt_up: float = 1.1,
         adapt_down: float = 0.9,
-        # ---- NEW (control-theory hygiene) ----
         strength_min: float = 0.01,
         strength_max: float = 1.0,
         deadband: float = 1e-3,
         ema_beta: float = 0.8,
+        memory_capacity: int = 512,
+        memory_similarity: float = 0.95,
     ) -> None:
+
+        # -----------------------------
         # Normalize concept vectors once
+        # -----------------------------
         self.v_direct = v_direct / (np.linalg.norm(v_direct) + 1e-9)
         self.v_jb = v_jb / (np.linalg.norm(v_jb) + 1e-9)
 
+        # Optional harmful subspace geometry
         self.mu_HJ = mu_HJ
         self.W = W
 
-        # Risk policy parameters
+        # -----------------------------
+        # Online controller parameters
+        # -----------------------------
         self.risk_threshold = float(risk_threshold)
-
-        # Adaptive gain parameters
         self.base_strength = float(base_strength)
         self.adapt_up = float(adapt_up)
         self.adapt_down = float(adapt_down)
 
-        # Safety bounds on gain (CRITICAL for stability)
+        # Saturation bounds (critical for stability)
         self.strength_min = float(strength_min)
         self.strength_max = float(strength_max)
 
-        # Ignore tiny risk fluctuations
+        # Noise handling
         self.deadband = float(deadband)
-
-        # Exponential moving average for noise suppression
         self.ema_beta = float(ema_beta)
+
+        # -----------------------------
+        # Learned memory parameters
+        # -----------------------------
+        # Stores (latent_direction, correction_vector)
+        self.memory_capacity = int(memory_capacity)
+        self.memory_similarity = float(memory_similarity)
+        self.memory: List[Tuple[np.ndarray, np.ndarray]] = []
 
         self.reset()
 
     # --------------------------------------------------
     def reset(self) -> None:
-        """Reset controller state at the start of a new game."""
+        """
+        Reset per-game controller state.
+
+        IMPORTANT:
+        - Memory is NOT cleared here
+        - This allows accumulation of defense experience
+        """
         self.strength = self.base_strength
-        self.last_risk: Optional[float] = None
-        self.smoothed_risk: Optional[float] = None
+        self.last_risk = None
+        self.smoothed_risk = None
 
     # --------------------------------------------------
     def compute_risk(self, fP: np.ndarray) -> float:
         """
-        Compute latent risk as alignment with harmful directions.
+        Compute latent risk.
 
-        Negative alignment (orthogonal or safe directions) is ignored.
+        Risk = positive alignment with harmful directions.
+        Negative or orthogonal alignment is ignored.
         """
         fP_u = fP / (np.linalg.norm(fP) + 1e-9)
 
         r_direct = float(np.dot(fP_u, self.v_direct))
         r_jb = float(np.dot(fP_u, self.v_jb))
 
-        # Only positive alignment contributes to risk
         return max(0.0, r_direct, r_jb)
+
+    # --------------------------------------------------
+    def _lookup_memory(self, fP: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Check whether this activation matches a previously
+        seen high-risk latent direction.
+
+        If similarity exceeds threshold:
+        → return cached correction vector
+        """
+        if not self.memory:
+            return None
+
+        fP_u = fP / (np.linalg.norm(fP) + 1e-9)
+
+        for u_mem, delta_mem in self.memory:
+            # Cosine similarity test
+            if np.dot(fP_u, u_mem) >= self.memory_similarity:
+                return delta_mem
+
+        return None
+
+    # --------------------------------------------------
+    def _store_memory(self, fP: np.ndarray, delta: np.ndarray) -> None:
+        """
+        Store a new defense experience.
+
+        Memory format:
+        - u = normalized risky direction
+        - delta = correction that worked
+        """
+        if len(self.memory) >= self.memory_capacity:
+            # FIFO eviction for stability
+            self.memory.pop(0)
+
+        u = fP / (np.linalg.norm(fP) + 1e-9)
+        self.memory.append((u, delta))
 
     # --------------------------------------------------
     def get_intervention(self, fP: np.ndarray) -> np.ndarray:
         """
-        Compute the latent correction vector.
+        Compute latent correction vector.
 
-        We move *away* from both harmful directions, weighted by
-        their relative activation.
+        Move AWAY from harmful directions,
+        weighted by their relative activation.
         """
         fP_u = fP / (np.linalg.norm(fP) + 1e-9)
 
@@ -120,10 +169,8 @@ class AdaptiveDefensePolicy:
         s_j = max(0.0, float(np.dot(fP_u, self.v_jb)))
 
         total = s_d + s_j + 1e-9
-        w_d = s_d / total
-        w_j = s_j / total
 
-        delta = -(w_d * self.v_direct + w_j * self.v_jb)
+        delta = -(s_d * self.v_direct + s_j * self.v_jb) / total
         delta = delta / (np.linalg.norm(delta) + 1e-9)
 
         return self.strength * delta
@@ -131,14 +178,29 @@ class AdaptiveDefensePolicy:
     # --------------------------------------------------
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
         """
-        Apply intervention only when risk exceeds threshold.
+        Apply defense intervention.
+
+        Priority:
+        1. Learned memory (fast path)
+        2. Online controller (fallback)
         """
         risk_now = self.compute_risk(fP)
 
         if risk_now <= self.risk_threshold:
             vec = fP
         else:
-            vec = fP + self.get_intervention(fP)
+            # Attempt fast learned response
+            learned_delta = self._lookup_memory(fP)
+
+            if learned_delta is not None:
+                vec = fP + learned_delta
+            else:
+                # Compute new correction
+                delta = self.get_intervention(fP)
+                vec = fP + delta
+
+                # Store this experience
+                self._store_memory(fP, delta)
 
         # Optional projection into harmful subspace
         if self.W is not None and self.mu_HJ is not None:
@@ -152,47 +214,38 @@ class AdaptiveDefensePolicy:
     # --------------------------------------------------
     def update_policy(self, risk_now: float) -> None:
         """
-        ADAPTATION RULE (CORE LOGIC)
+        Online adaptation of intervention strength λ.
 
-        This function updates the intervention strength λ.
-
-        Line-by-line explanation below.
+        This is a sign-based gain scheduling controller.
         """
 
-        # ---- Step 1: Smooth the risk signal (low-pass filter) ----
+        # Smooth noisy risk signal
         if self.smoothed_risk is None:
             self.smoothed_risk = risk_now
         else:
             self.smoothed_risk = (
                 self.ema_beta * self.smoothed_risk
-                + (1.0 - self.ema_beta) * risk_now
+                + (1 - self.ema_beta) * risk_now
             )
 
-        # ---- Step 2: If no previous risk, initialize and exit ----
         if self.last_risk is None:
             self.last_risk = self.smoothed_risk
             return
 
-        # ---- Step 3: Compute risk change ----
         delta = self.smoothed_risk - self.last_risk
 
-        # ---- Step 4: Deadband (ignore noise) ----
-        if abs(delta) <= self.deadband:
-            # Do nothing: keep current strength
-            pass
+        # Ignore noise
+        if abs(delta) > self.deadband:
+            if delta > 0:
+                # Attacker improving → strengthen defense
+                self.strength *= self.adapt_up
+            else:
+                # Defense effective → relax slightly
+                self.strength *= self.adapt_down
 
-        # ---- Step 5: Gain scheduling ----
-        elif delta > 0:
-            # Risk increased → attacker is winning → strengthen defense
-            self.strength *= self.adapt_up
-        else:
-            # Risk decreased → defense is effective → relax slightly
-            self.strength *= self.adapt_down
-
-        # ---- Step 6: Saturation (CRITICAL for stability) ----
+        # Enforce bounds
         self.strength = float(
             np.clip(self.strength, self.strength_min, self.strength_max)
         )
 
-        # ---- Step 7: Store for next round ----
         self.last_risk = self.smoothed_risk
