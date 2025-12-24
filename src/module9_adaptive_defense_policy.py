@@ -1,79 +1,43 @@
 """
-Module 9 — Adaptive Defense Policy
-===================================
+Module 9 — Adaptive Defense Policy (HAVOC++)
+============================================
 
-This module implements the adaptive latent defense policy for HAVOC++.
+This module implements an adaptive latent-space defense that actively
+counteracts attacker progress by adjusting the *strength* of latent
+interventions over time.
 
-It defines a class ``AdaptiveDefensePolicy`` that monitors latent risk and
-applies interventions to keep internal representations within a stable,
-refusal‑dominant region under adaptive attack.  The policy operates purely
-in latent space and does not require fine‑tuning of the base model.
+Key idea:
+---------
+Treat the defender as a feedback controller operating on a scalar
+risk signal measured from internal activations.
 
-Key components:
+The controller:
+- increases intervention strength when risk worsens,
+- decreases strength when risk improves,
+- ignores small noisy fluctuations (deadband),
+- enforces hard bounds on strength (saturation).
 
-* **Risk computation**: Given an activation vector ``fP``, the policy
-  computes a risk score as the maximum cosine similarity to the
-  ``v_direct`` and ``v_jb`` concept directions.  Higher values indicate
-  closer alignment with harmful behaviours.  The cosine similarity is
-  mapped from ``[-1, 1]`` to ``[0, 1]`` for ease of thresholding.
-
-* **Intervention**: When the risk is above the configured threshold, the
-  policy computes a corrective vector that points away from the
-  dominant harmful concept direction and scales it by an adaptive
-  strength parameter.  This vector is added to the current activation
-  to push it toward safer regions.
-
-* **Adaptation**: After each round, the policy updates the strength
-  parameter.  If the risk increased relative to the previous round the
-  intervention strength is amplified; if risk decreased it is slightly
-  reduced.  This implements a simple proportional‑style controller and
-  encourages convergence.
-
-The policy can optionally project corrected activations into a
-subspace defined by the harmful manifold (``W``, ``mu_HJ``).  This
-ensures interventions respect the learned geometry of harmful/jailbreak
-activations.  Users may override the risk computation or adaptation
-rules by subclassing ``AdaptiveDefensePolicy``.
-
+This is a robust gain-scheduling controller suitable for unknown,
+non-linear, adversarial dynamics.
 """
 
 from __future__ import annotations
-
 from typing import Optional
 import numpy as np
 
 
 class AdaptiveDefensePolicy:
-    """Adaptive latent defense policy for HAVOC++.
+    """
+    Adaptive latent defense policy for HAVOC++.
 
-    This class encapsulates the defender component of the HAVOC++
-    pipeline.  It monitors how strongly a candidate activation aligns
-    with harmful or jailbreak concepts and applies a corrective vector
-    to reduce that alignment.  The magnitude of the corrective action
-    adapts over time in response to attacker behaviour.
+    The policy monitors defended risk across rounds and adaptively
+    adjusts the intervention magnitude λ (strength).
 
-    Args:
-        v_direct: Normalised direct concept vector.  Representing the
-            shift from benign to harmful semantics.
-        v_jb: Normalised jailbreak concept vector.  Representing the
-            shift from harmful to jailbreak semantics.
-        mu_HJ: Mean of the harmful subspace (optional).  Providing
-            centring for subspace projection.
-        W: Harmful subspace basis (rows are PCA components, optional).
-        risk_threshold: Maximum acceptable risk. The defense intervenes only
-        when the measured risk exceeds this value.
-        If the measured risk
-            falls below this value the system is considered safe.
-        base_strength: Initial intervention strength (step size).
-        adapt_up: Multiplicative factor to increase strength when risk
-            increases across rounds.
-        adapt_down: Multiplicative factor to decrease strength when risk
-            decreases across rounds.
+    This is NOT gradient descent.
+    This is NOT model-based control.
 
-    Attributes:
-        strength: Current intervention strength.  Updated after each
-            round based on risk dynamics.
-        last_risk: Risk value from the previous round.
+    It is a sign-based, multiplicative gain controller designed
+    for adversarial, non-stationary attackers.
     """
 
     def __init__(
@@ -87,129 +51,148 @@ class AdaptiveDefensePolicy:
         base_strength: float = 0.05,
         adapt_up: float = 1.1,
         adapt_down: float = 0.9,
+        # ---- NEW (control-theory hygiene) ----
+        strength_min: float = 0.01,
+        strength_max: float = 1.0,
+        deadband: float = 1e-3,
+        ema_beta: float = 0.8,
     ) -> None:
-        # Normalise concept vectors
+        # Normalize concept vectors once
         self.v_direct = v_direct / (np.linalg.norm(v_direct) + 1e-9)
         self.v_jb = v_jb / (np.linalg.norm(v_jb) + 1e-9)
+
         self.mu_HJ = mu_HJ
         self.W = W
-        self.risk_threshold = risk_threshold
-        self.base_strength = base_strength
-        self.adapt_up = adapt_up
-        self.adapt_down = adapt_down
+
+        # Risk policy parameters
+        self.risk_threshold = float(risk_threshold)
+
+        # Adaptive gain parameters
+        self.base_strength = float(base_strength)
+        self.adapt_up = float(adapt_up)
+        self.adapt_down = float(adapt_down)
+
+        # Safety bounds on gain (CRITICAL for stability)
+        self.strength_min = float(strength_min)
+        self.strength_max = float(strength_max)
+
+        # Ignore tiny risk fluctuations
+        self.deadband = float(deadband)
+
+        # Exponential moving average for noise suppression
+        self.ema_beta = float(ema_beta)
+
         self.reset()
 
+    # --------------------------------------------------
     def reset(self) -> None:
-        """Reset internal state at the start of a new game."""
+        """Reset controller state at the start of a new game."""
         self.strength = self.base_strength
         self.last_risk: Optional[float] = None
+        self.smoothed_risk: Optional[float] = None
 
+    # --------------------------------------------------
     def compute_risk(self, fP: np.ndarray) -> float:
-        """Compute latent risk for a candidate activation.
-
-        Risk is defined as the maximum cosine similarity between ``fP``
-        and the dangerous concept vectors.  A higher value indicates
-        closer alignment with harmful behaviours.  The cosine similarity
-        is mapped from ``[-1, 1]`` to ``[0, 1]``.
-
-        Args:
-            fP: Activation vector (assumed L2 normalised or arbitrary).
-
-        Returns:
-            Risk score in ``[0, 1]``.
         """
-        # Ensure unit length
+        Compute latent risk as alignment with harmful directions.
+
+        Negative alignment (orthogonal or safe directions) is ignored.
+        """
         fP_u = fP / (np.linalg.norm(fP) + 1e-9)
 
         r_direct = float(np.dot(fP_u, self.v_direct))
         r_jb = float(np.dot(fP_u, self.v_jb))
 
-        raw = max(r_direct, r_jb)
+        # Only positive alignment contributes to risk
+        return max(0.0, r_direct, r_jb)
 
-        # IMPORTANT:
-        # Ignore negatively aligned (safe or irrelevant) directions
-        risk = max(0.0, raw)
-
-        return risk
-
-
+    # --------------------------------------------------
     def get_intervention(self, fP: np.ndarray) -> np.ndarray:
         """
-        Compute a latent intervention vector to reduce risk.
+        Compute the latent correction vector.
 
-        The intervention moves away from BOTH harmful concept directions,
-        weighted by how strongly each direction is activated.
+        We move *away* from both harmful directions, weighted by
+        their relative activation.
         """
         fP_u = fP / (np.linalg.norm(fP) + 1e-9)
 
-        # Measure alignment
-        score_direct = max(0.0, float(np.dot(fP_u, self.v_direct)))
-        score_jb = max(0.0, float(np.dot(fP_u, self.v_jb)))
+        s_d = max(0.0, float(np.dot(fP_u, self.v_direct)))
+        s_j = max(0.0, float(np.dot(fP_u, self.v_jb)))
 
-        total = score_direct + score_jb + 1e-9
-        w_direct = score_direct / total
-        w_jb = score_jb / total
+        total = s_d + s_j + 1e-9
+        w_d = s_d / total
+        w_j = s_j / total
 
-        # Move away from both directions
-        delta = -(w_direct * self.v_direct + w_jb * self.v_jb)
+        delta = -(w_d * self.v_direct + w_j * self.v_jb)
         delta = delta / (np.linalg.norm(delta) + 1e-9)
 
         return self.strength * delta
 
-
+    # --------------------------------------------------
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
-        """Apply a latent intervention to ``fP`` when risk is high.
-
-        If the current risk is below ``risk_threshold``, no intervention is
-        applied (we only normalise / optionally project). This makes the
-        defence a *policy* rather than an always-on perturbation, and aligns
-        with the HAVOC++ claim: intervene when the attacker pushes risk upward.
-
-        Args:
-            fP: Activation vector.
-
-        Returns:
-            Defended and L2‑normalised activation vector.
         """
-        # Measure risk on the incoming activation
+        Apply intervention only when risk exceeds threshold.
+        """
         risk_now = self.compute_risk(fP)
 
-        # If already low-risk, do not perturb (but keep representation in the same space)
         if risk_now <= self.risk_threshold:
-            vec_new = fP
+            vec = fP
         else:
-            delta = self.get_intervention(fP)
-            vec_new = fP + delta
+            vec = fP + self.get_intervention(fP)
 
-        # If a subspace basis is provided, project the result into it
+        # Optional projection into harmful subspace
         if self.W is not None and self.mu_HJ is not None:
-            diff = vec_new - self.mu_HJ
-            vec_proj = self.mu_HJ + self.W.T @ (self.W @ diff)
+            diff = vec - self.mu_HJ
+            vec = self.mu_HJ + self.W.T @ (self.W @ diff)
         elif self.W is not None:
-            # Project without mean centring if ``mu_HJ`` is unavailable
-            vec_proj = self.W.T @ (self.W @ vec_new)
-        else:
-            vec_proj = vec_new
+            vec = self.W.T @ (self.W @ vec)
 
-        # Normalise
-        vec_proj = vec_proj / (np.linalg.norm(vec_proj) + 1e-9)
-        return vec_proj
+        return vec / (np.linalg.norm(vec) + 1e-9)
 
+    # --------------------------------------------------
     def update_policy(self, risk_now: float) -> None:
-        """Update the intervention strength based on recent risk.
-
-        If risk increases relative to the previous round, strengthen the
-        intervention; if risk decreases, weaken it slightly.  This
-        implements a simple proportional‑style controller.
-
-        Args:
-            risk_now: Newly measured risk value.
         """
-        if self.last_risk is not None:
-            if risk_now > self.last_risk + 1e-6:
-                # Attackers made progress → strengthen defence
-                self.strength *= self.adapt_up
-            else:
-                # Defence is effective → reduce strength gently
-                self.strength *= self.adapt_down
-        self.last_risk = risk_now
+        ADAPTATION RULE (CORE LOGIC)
+
+        This function updates the intervention strength λ.
+
+        Line-by-line explanation below.
+        """
+
+        # ---- Step 1: Smooth the risk signal (low-pass filter) ----
+        if self.smoothed_risk is None:
+            self.smoothed_risk = risk_now
+        else:
+            self.smoothed_risk = (
+                self.ema_beta * self.smoothed_risk
+                + (1.0 - self.ema_beta) * risk_now
+            )
+
+        # ---- Step 2: If no previous risk, initialize and exit ----
+        if self.last_risk is None:
+            self.last_risk = self.smoothed_risk
+            return
+
+        # ---- Step 3: Compute risk change ----
+        delta = self.smoothed_risk - self.last_risk
+
+        # ---- Step 4: Deadband (ignore noise) ----
+        if abs(delta) <= self.deadband:
+            # Do nothing: keep current strength
+            pass
+
+        # ---- Step 5: Gain scheduling ----
+        elif delta > 0:
+            # Risk increased → attacker is winning → strengthen defense
+            self.strength *= self.adapt_up
+        else:
+            # Risk decreased → defense is effective → relax slightly
+            self.strength *= self.adapt_down
+
+        # ---- Step 6: Saturation (CRITICAL for stability) ----
+        self.strength = float(
+            np.clip(self.strength, self.strength_min, self.strength_max)
+        )
+
+        # ---- Step 7: Store for next round ----
+        self.last_risk = self.smoothed_risk
