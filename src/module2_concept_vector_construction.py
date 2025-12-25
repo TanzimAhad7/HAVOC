@@ -123,3 +123,5 @@ def load_concepts(layer: int = LAYER, concept_dir: str = OUT_DIR):
 
 if __name__ == "__main__":
     run_concept_construction(LAYER)
+
+#CUDA_VISIBLE_DEVICES=3 nohup python module2_concept_vector_construction.py > /home/tahad/HAVOC/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &

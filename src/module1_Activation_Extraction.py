@@ -41,7 +41,7 @@ device = torch.device("cuda")
 #  FILE PATHS — Hardcoded dataset paths for static extraction
 # ============================================================
 alpaca_file    = "/home/tahad/HAVOC/HAVOC/dataset/alpaca_benign.json"
-direct_file   = "/home/tahad/HAVOC/HAVOC/dataset/advbench_direct.json"
+direct_file   = "/home/tahad/HAVOC/HAVOC/dataset/advbench_anchor.json"
 composed_file = "/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_composed.json"
 
 out_dir = "/home/tahad/HAVOC/HAVOC/output/activations"
@@ -269,3 +269,5 @@ def extract_activation_dynamic(prompt: str, layer: int = 20) -> np.ndarray:
 # If this module is invoked directly it will perform the static extraction
 if __name__ == "__main__":
     run_static_extraction()
+
+#CUDA_VISIBLE_DEVICES=3 nohup python module1_Activation_Extraction.py > /home/tahad/HAVOC/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &

@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from typing import Optional, Dict, Any
 
 from datasets import load_dataset  # type: ignore
@@ -104,12 +105,47 @@ def convert_dataset(
 
 
 # ============================================================
+#  Helper: Deterministic AdvBench Split
+# ============================================================
+def split_advbench(
+    input_file: str,
+    anchor_file: str,
+    eval_file: str,
+    n_anchor: int = 400,
+    n_eval: int = 100,
+    seed: int = 0,
+) -> None:
+
+    with open(input_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if len(data) < n_anchor + n_eval:
+        raise ValueError(
+            f"AdvBench too small: {len(data)} < {n_anchor + n_eval}"
+        )
+
+    random.seed(seed)
+    random.shuffle(data)
+
+    anchor = data[:n_anchor]
+    evalset = data[n_anchor : n_anchor + n_eval]
+
+    with open(anchor_file, "w", encoding="utf-8") as f:
+        json.dump(anchor, f, indent=2, ensure_ascii=False)
+
+    with open(eval_file, "w", encoding="utf-8") as f:
+        json.dump(evalset, f, indent=2, ensure_ascii=False)
+
+    print(f"[AdvBench SPLIT] {len(anchor)} anchor + {len(evalset)} eval samples saved.")
+
+
+# ============================================================
 #  MAIN PIPELINE
 # ============================================================
 def main() -> None:
 
     # ------------------------------------------------------------
-    # 1. BENIGN — Alpaca (52k)
+    # 1. BENIGN — Alpaca
     # ------------------------------------------------------------
     convert_dataset(
         dataset_name="tatsu-lab/alpaca",
@@ -124,14 +160,14 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------
-    # 2. HARMFUL — WildGuardMix (unsafe only)
+    # 2. direct — WildGuardMix
     # ------------------------------------------------------------
     convert_dataset(
         dataset_name="allenai/wildguardmix",
         config_name="wildguardtrain",
         column_name="prompt",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/wildjailbreak_harmful.json",
-        label="harmful",
+        output_file="/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_direct.json",
+        label="direct",
         source="allenai/wildguardmix",
         id_prefix="h",
         split="train",
@@ -141,14 +177,14 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------
-    # 3. JAILBREAK — WildJailbreak (Adversarial Harmful)
+    # 3. composed — WildJailbreak
     # ------------------------------------------------------------
     convert_dataset(
         dataset_name="allenai/wildjailbreak",
         config_name="train",
         column_name="adversarial",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/wildjailbreak_jailbreak.json",
-        label="jailbreak",
+        output_file="/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_composed.json",
+        label="composed",
         source="allenai/wildjailbreak",
         id_prefix="j",
         split="train",
@@ -158,18 +194,31 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------
-    # 4. NEW: HARMFUL — AdvBench (direct harmful instructions)
+    # 4. direct — AdvBench (FIXED HERE)
     # ------------------------------------------------------------
+    advbench_full = "/home/tahad/HAVOC/HAVOC/dataset/advbench_full.json"
+    advbench_anchor = "/home/tahad/HAVOC/HAVOC/dataset/advbench_anchor.json"
+    advbench_eval = "/home/tahad/HAVOC/HAVOC/dataset/advbench_eval.json"
+
     convert_dataset(
         dataset_name="walledai/AdvBench",
         config_name=None,
         column_name="prompt",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/advbench_direct.json",
-        label="harmful",
+        output_file=advbench_full,
+        label="direct",
         source="walledai/AdvBench",
         id_prefix="h",
         split="train",
         streaming=False,
+    )
+
+    split_advbench(
+        input_file=advbench_full,
+        anchor_file=advbench_anchor,
+        eval_file=advbench_eval,
+        n_anchor=400,
+        n_eval=100,
+        seed=0,
     )
 
 
@@ -178,3 +227,6 @@ def main() -> None:
 # ============================================================
 if __name__ == "__main__":
     main()
+
+# CUDA_VISIBLE_DEVICES=3 nohup python Dataset_preparation.py > /home/tahad/HAVOC/HAVOC/logs/Dataset_preparation.log  2>&1 &
+ 

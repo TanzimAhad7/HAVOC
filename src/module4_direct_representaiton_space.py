@@ -176,3 +176,6 @@ def load_direct_space(subspace_dir: str = SUBSPACE_DIR):
 
 if __name__ == "__main__":
     run_direct_space_construction(LAYER, TOP_K)
+
+
+#CUDA_VISIBLE_DEVICES=3 nohup python module4_direct_representaiton_space.py > /home/tahad/HAVOC/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &

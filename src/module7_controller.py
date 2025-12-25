@@ -356,8 +356,8 @@ class HAVOC_Controller:
             raise ValueError("Module 7 expects (W, mu_HJ) from Module 4 for consistent scoring/projection.")
 
         # Project concept vectors into the same space Optimus-V uses
-        self.v_direct_proj = self._project_concept(self.v_direct)
-        self.v_jb_proj = self._project_concept(self.v_jb)
+        # self.v_direct_proj = self._project_concept(self.v_direct)
+        # self.v_jb_proj = self._project_concept(self.v_jb)
 
         # Cache intent activation once for Optimus-V (Module 3 supports fI_cached)
         from module3_optimus_V_scoring import extract_activation as _extract_act_m3
@@ -375,14 +375,14 @@ class HAVOC_Controller:
     def _l2_normalize(x: np.ndarray, eps: float = 1e-9) -> np.ndarray:
         return x / (np.linalg.norm(x) + eps)
 
-    def _project_concept(self, v: np.ndarray) -> np.ndarray:
-        """
-        Project a vector into the subspace coordinates used by Optimus-V.
-        This MUST match the same projection used for activations in Module 3.
-        """
-        v = self._l2_normalize(v)
-        y = self.W @ (v - self.mu_HJ)
-        return self._l2_normalize(y)
+    # def _project_concept(self, v: np.ndarray) -> np.ndarray:
+    #     """
+    #     Project a vector into the subspace coordinates used by Optimus-V.
+    #     This MUST match the same projection used for activations in Module 3.
+    #     """
+    #     v = self._l2_normalize(v)
+    #     y = self.W @ (v - self.mu_HJ)
+    #     return self._l2_normalize(y)
 
     def _log(self, action: str, prompt: str, score: float) -> None:
         self.traj.actions.append(action)
@@ -398,8 +398,10 @@ class HAVOC_Controller:
             optimusV(
                 intent_prompt=self.intent,
                 candidate_prompt=cand,
-                v_direct=self.v_direct_proj,
-                v_jb=self.v_jb_proj,
+                # v_direct=self.v_direct_proj,
+                # v_jb=self.v_jb_proj,
+                v_direct=self.v_direct,
+                v_jb=self.v_jb,
                 layer=self.layer,
                 W=self.W,
                 mu_HJ=self.mu_HJ,
