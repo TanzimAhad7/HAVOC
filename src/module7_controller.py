@@ -256,14 +256,16 @@ class HAVOC_Controller:
             if c.strip() == self.intent.strip():
                 continue
             s = optimusV(
-                self.intent,
-                c,
+                intent_prompt=self.intent,
+                candidate_prompt=c,
                 v_direct=self.v_direct_proj,
                 v_jb=self.v_jb_proj,
+                layer=self.layer,
                 W=self.W,
                 mu_HJ=self.mu_HJ,
                 fI_cached=self.fI_cached,
             )
+
             if s > best_s:
                 best_p, best_s = c, s
         return best_p, float(best_s)
@@ -304,7 +306,7 @@ class HAVOC_Controller:
         with steer_hidden_state(
             self.rewriter.model,
             self.layer,
-            steer_vector if steer_vector is not None else self.v_jb,
+            steer_vector,
             steer_alpha,
         ):
             cands = self.rewriter.generate(
