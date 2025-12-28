@@ -177,21 +177,40 @@ class AdaptiveDefensePolicy:
     # --------------------------------------------------
     def compute_risk(self, fP: np.ndarray) -> float:
         """
-        Compute latent risk.
+        Compute latent risk in the SAME space as Optimus-V.
 
-        Risk = positive cosine alignment with harmful directions.
-        If alignment is negative (safe / opposite direction), treat as 0 risk.
-
-        Returns:
-            risk in [0, 1] (actually [0, 1] if fP normalized, else still bounded by cosine after normalize)
+        Risk = max positive cosine alignment with:
+        - direct harmful direction
+        - jailbreak harmful direction
         """
+
+        # Normalize input
         fP_u = self._l2_normalize(fP.astype(self.memory_dtype))
 
-        r_direct = float(np.dot(fP_u, self.v_direct))
-        r_jb = float(np.dot(fP_u, self.v_jb))
+        # --------------------------------------------------
+        # PROJECT CONSISTENTLY (same rule as Optimus-V)
+        # --------------------------------------------------
+        if self.W is not None and self.mu_HJ is not None:
+            fP_s = self._l2_normalize(self.W @ (fP_u - self.mu_HJ))
+            vD_s = self._l2_normalize(self.W @ (self.v_direct - self.mu_HJ))
+            vJ_s = self._l2_normalize(self.W @ (self.v_jb - self.mu_HJ))
+        elif self.W is not None:
+            fP_s = self._l2_normalize(self.W @ fP_u)
+            vD_s = self._l2_normalize(self.W @ self.v_direct)
+            vJ_s = self._l2_normalize(self.W @ self.v_jb)
+        else:
+            fP_s = fP_u
+            vD_s = self.v_direct
+            vJ_s = self.v_jb
 
-        # Keep only positive alignment as "risk"
+        # --------------------------------------------------
+        # RISK = worst harmful alignment
+        # --------------------------------------------------
+        r_direct = float(np.dot(fP_s, vD_s))
+        r_jb = float(np.dot(fP_s, vJ_s))
+
         return max(0.0, r_direct, r_jb)
+
 
     # --------------------------------------------------
     def _lookup_memory(self, fP: np.ndarray) -> Optional[np.ndarray]:

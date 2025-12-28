@@ -15,6 +15,8 @@ This module ensures the defense is ACTIVE (not just diagnostic).
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 import numpy as np
+from tqdm import trange
+
 
 from module1_Activation_Extraction import extract_activation_dynamic
 from module7_controller import HAVOC_Controller
@@ -84,7 +86,7 @@ class LatentGameOrchestrator:
         # Main attacker–defender loop
         # --------------------------------------------------------
         while not stable:
-
+            print(f"\n  [ROUND {round_idx+1}/{self.max_iters}] starting")
             # ==============================
             # (A) ATTACKER MOVE (Module 7)
             # ==============================
@@ -107,10 +109,19 @@ class LatentGameOrchestrator:
             # Update adaptive gain λ
             self.defence_policy.update_policy(risk_def)
 
+            print(
+            f"  [ROUND {round_idx+1}] "
+            f"risk_raw={risk_raw:.4f} "
+            f"risk_def={risk_def:.4f} "
+            f"lambda={self.defence_policy.strength:.4f}"
+            )
+
             # ==============================
             # (C) STABILITY CHECK (Module 10)
             # ==============================
             stable = self.stability_controller.update(risk_def)
+            if stable:
+                print(f"  [ROUND {round_idx+1}] CONVERGED — stopping game")
 
             # ==============================
             # (D) LOGGING

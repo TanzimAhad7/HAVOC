@@ -26,7 +26,7 @@ Run this ONLY AFTER ALL THREE files exist:
     havoc_traces_nodefense.jsonl
 
 Correct order:
-    1) run_all__patched.py
+    1) run_all.py
     2) run_all_staticlambda.py
     3) run_all_nodefense.py
     4) plot_compare_defenses.py  ← THIS SCRIPT

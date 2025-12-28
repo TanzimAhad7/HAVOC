@@ -41,6 +41,8 @@ import random
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from tqdm import trange
+
 
 import numpy as np
 import torch
@@ -81,8 +83,8 @@ STEER_TOP_P = 0.95
 DEFAULT_STEER_ALPHA = 0.05
 
 # Candidate counts
-DEFAULT_REWRITE_CANDIDATES = 32
-DEFAULT_STEER_CANDIDATES = 16
+DEFAULT_REWRITE_CANDIDATES = 12
+DEFAULT_STEER_CANDIDATES = 6
 
 # Search stopping
 NO_IMPROVE_PATIENCE = 4
@@ -469,7 +471,10 @@ class HAVOC_Controller:
         if not candidates:
             candidates = [self.intent]
 
+        print(f"      [FUZZ] generated {len(candidates)} candidates")
+        
         return self._select_best(candidates)
+
 
     def apply_steer(self, *, steer_vector: Optional[np.ndarray], steer_alpha: float) -> Tuple[str, float]:
         """
@@ -486,6 +491,15 @@ class HAVOC_Controller:
             return self.apply_fuzz()
 
         seed = build_refine_seed(self.intent, self.best_prompt)
+
+        # ===============================
+        # VISIBILITY: STEER STEP
+        # ===============================
+        print(
+            f"      [STEER] refining prompt "
+            f"(alpha={steer_alpha:.4f}, "
+            f"has_defense={'yes' if steer_vector is not None else 'no'})"
+        )
 
         # Keep decoder bias on v_jb for "composed" rewrite style
         self.rewriter.set_concept_bias(self.v_jb)
@@ -523,8 +537,19 @@ class HAVOC_Controller:
 
         no_improve = 0
 
-        for _ in range(self.max_iters):
+        for step in trange(
+            self.max_iters,
+            desc="    ↳ Attacker search",
+            leave=False
+        ):
+
             action = self.choose_action(self.best_score)
+
+            print(
+                f"    [ATTACKER step {step+1}] "
+                f"action={action} "
+                f"best_score={self.best_score:.4f}"
+            )
 
             if action == "fuzz":
                 p2, s2 = self.apply_fuzz()
@@ -534,12 +559,15 @@ class HAVOC_Controller:
             self._log(action, p2, s2)
 
             if s2 > self.best_score + 1e-6:
+                print(f"    [IMPROVED] score ↑ to {self.best_score:.4f}")
                 self.best_prompt, self.best_score = p2, s2
                 no_improve = 0
             else:
+                print(f"    [NO IMPROVEMENT] patience={no_improve}")
                 no_improve += 1
 
             if no_improve >= NO_IMPROVE_PATIENCE:
+                print("    [ATTACKER STOP] no improvement — exiting attacker loop")
                 break
 
         traj_dict = {
