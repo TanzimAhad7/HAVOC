@@ -31,6 +31,8 @@ import random
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+
 # ============================================================
 #  GPU CHECK — Ensure we are actually using CUDA/H100
 # ============================================================
@@ -40,11 +42,11 @@ device = torch.device("cuda")
 # ============================================================
 #  FILE PATHS — Hardcoded dataset paths for static extraction
 # ============================================================
-alpaca_file    = "/home/tahad/HAVOC/HAVOC/dataset/alpaca_benign.json"
-direct_file   = "/home/tahad/HAVOC/HAVOC/dataset/advbench_anchor.json"
-composed_file = "/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_composed.json"
+alpaca_file    = f"{PARENT_PATH}/dataset/alpaca_benign.json"
+direct_file   = f"{PARENT_PATH}/dataset/advbench_anchor.json"
+composed_file = f"{PARENT_PATH}/dataset/wildcomposed_composed.json"
 
-out_dir = "/home/tahad/HAVOC/HAVOC/output/activations"
+out_dir = f"{PARENT_PATH}/output/activations"
 os.makedirs(out_dir, exist_ok=True)
 
 # ============================================================
