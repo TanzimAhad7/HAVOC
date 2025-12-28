@@ -270,74 +270,25 @@ class AdaptiveDefensePolicy:
         Output:
           delta = λ * direction_away_from_harm
         """
-        fP = fP.astype(self.memory_dtype)
-        risk_now = self.compute_risk(fP)
+        fP_u = self._l2_normalize(fP.astype(self.memory_dtype))
 
-        delta_used = None
-        vec = fP
-        source = "none"
+        s_d = max(0.0, float(np.dot(fP_u, self.v_direct)))
+        s_j = max(0.0, float(np.dot(fP_u, self.v_jb)))
 
-        if risk_now > self.risk_threshold:
-            print(
-                f"[DEFENSE TRIGGERED] "
-                f"risk={risk_now:.4f} > threshold={self.risk_threshold:.4f}"
-            )
+        total = s_d + s_j + 1e-9
 
-            learned_delta = self._lookup_memory(fP)
+        direction = -(s_d * self.v_direct + s_j * self.v_jb) / total
+        direction = self._l2_normalize(direction.astype(self.memory_dtype))
 
-            if learned_delta is not None:
-                # MEMORY PATH
-                delta_used = learned_delta.astype(self.memory_dtype)
-                source = "memory"
-                vec = fP + delta_used
-            else:
-                # ONLINE PATH
-                delta_used = self.get_intervention(fP)
-                source = "online"
-                vec = fP + delta_used
-                self._store_memory(fP, delta_used)
-
-            print(
-                f"[DEFENSE APPLIED] "
-                f"source={source} | "
-                f"delta_norm={np.linalg.norm(delta_used):.6f}"
-            )
-
-        # bookkeeping for attacker feedback
-        if delta_used is not None:
-            self.last_delta = delta_used
-            self.last_delta_dir = self._l2_normalize(delta_used)
-        else:
-            self.last_delta = None
-            self.last_delta_dir = None
-
-        return self._l2_normalize(vec)
-    # --------------------------------------------------
+        delta = (self.strength * direction).astype(self.memory_dtype)
+        return delta
+    
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
-        """
-        Apply defense intervention.
-
-        Priority:
-        1) If risk <= threshold: do nothing (policy is quiet)
-        2) Else:
-            2a) Try memory fast-path (cached delta)
-            2b) Otherwise compute new delta and store it
-
-        Also:
-        - Store last_delta_dir for Module 8 -> Module 7 coupling.
-        - Optionally project into harmful subspace (W, mu_HJ).
-        - Return L2-normalized defended activation.
-        """
         fP = fP.astype(self.memory_dtype)
         risk_now = self.compute_risk(fP)
-        if risk_now > self.risk_threshold:
-            print(
-                f"[DEFENSE TRIGGERED] "
-                f"risk={risk_now:.4f} > threshold={self.risk_threshold:.4f}"
-            )
 
-        # Default: no correction
         delta_used = None
+        source = "none"
         vec = fP
 
         if risk_now > self.risk_threshold:
@@ -347,46 +298,21 @@ class AdaptiveDefensePolicy:
                 delta_used = learned_delta.astype(self.memory_dtype)
                 source = "memory"
             else:
-                delta_used = self.get_intervention(fP)
+                delta_used = self.get_intervention(fP)   # ← correct call
                 source = "online"
                 self._store_memory(fP, delta_used)
 
             vec = fP + delta_used
 
-            # LOG DELTA STRENGTH
-            print(
-                f"[DEFENSE APPLIED] "
-                f"source={source} | "
-                f"delta_norm={np.linalg.norm(delta_used):.6f}"
-            )
+            # SINGLE, CLEAN LOG (what you asked for)
+            print(f"[DEFENSE] source={source}")
 
+        vec = self._l2_normalize(vec)
 
-        # --------------------------------------------------
-        # OPTIONAL: project into subspace geometry
-        # --------------------------------------------------
-        if self.W is not None and self.mu_HJ is not None:
-            diff = vec - self.mu_HJ
-            vec = self.mu_HJ + self.W.T @ (self.W @ diff)
-        elif self.W is not None:
-            vec = self.W.T @ (self.W @ vec)
-
-        # Normalize defended activation
-        vec = self._l2_normalize(vec.astype(self.memory_dtype))
-
-        # --------------------------------------------------
-        # IMPORTANT: expose a *direction* for attacker steering (Module 7)
-        # --------------------------------------------------
-        # If we applied a delta, the best "steer vector" is its DIRECTION.
-        # If no delta was applied, set to None (no special defense direction this round).
-        if delta_used is not None:
-            self.last_delta = delta_used
-            self.last_delta_dir = self._l2_normalize(delta_used.astype(self.memory_dtype))
-        else:
-            self.last_delta = None
-            self.last_delta_dir = None
-
-        # Bookkeeping (optional)
-        self.last_defended_fP = vec
+        self.last_delta = delta_used
+        self.last_delta_dir = (
+            self._l2_normalize(delta_used) if delta_used is not None else None
+        )
 
         return vec
 
