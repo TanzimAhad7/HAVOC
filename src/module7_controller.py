@@ -495,14 +495,10 @@ class HAVOC_Controller:
         # ===============================
         # VISIBILITY: STEER STEP
         # ===============================
-        defense_source = (
-            "memory" if steer_vector is not None else "none"
-        )
 
         print(
-            f"      [STEER] refining prompt "
-            f"(alpha={steer_alpha:.4f}, "
-            f"defense_source={defense_source})"
+            f"[STEER] refining prompt "
+            f"(alpha={steer_alpha:.4f}, defender_feedback={'yes' if steer_vector is not None else 'no'})"
         )
 
         # Keep decoder bias on v_jb for "composed" rewrite style

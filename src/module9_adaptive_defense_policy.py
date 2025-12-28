@@ -270,21 +270,48 @@ class AdaptiveDefensePolicy:
         Output:
           delta = λ * direction_away_from_harm
         """
-        fP_u = self._l2_normalize(fP.astype(self.memory_dtype))
+        fP = fP.astype(self.memory_dtype)
+        risk_now = self.compute_risk(fP)
 
-        # Non-negative activation strengths
-        s_d = max(0.0, float(np.dot(fP_u, self.v_direct)))
-        s_j = max(0.0, float(np.dot(fP_u, self.v_jb)))
+        delta_used = None
+        vec = fP
+        source = "none"
 
-        total = s_d + s_j + 1e-9
+        if risk_now > self.risk_threshold:
+            print(
+                f"[DEFENSE TRIGGERED] "
+                f"risk={risk_now:.4f} > threshold={self.risk_threshold:.4f}"
+            )
 
-        # Direction away from harmful manifold (weighted)
-        direction = -(s_d * self.v_direct + s_j * self.v_jb) / total
-        direction = self._l2_normalize(direction.astype(self.memory_dtype))
+            learned_delta = self._lookup_memory(fP)
 
-        delta = (self.strength * direction).astype(self.memory_dtype)
-        return delta
+            if learned_delta is not None:
+                # MEMORY PATH
+                delta_used = learned_delta.astype(self.memory_dtype)
+                source = "memory"
+                vec = fP + delta_used
+            else:
+                # ONLINE PATH
+                delta_used = self.get_intervention(fP)
+                source = "online"
+                vec = fP + delta_used
+                self._store_memory(fP, delta_used)
 
+            print(
+                f"[DEFENSE APPLIED] "
+                f"source={source} | "
+                f"delta_norm={np.linalg.norm(delta_used):.6f}"
+            )
+
+        # bookkeeping for attacker feedback
+        if delta_used is not None:
+            self.last_delta = delta_used
+            self.last_delta_dir = self._l2_normalize(delta_used)
+        else:
+            self.last_delta = None
+            self.last_delta_dir = None
+
+        return self._l2_normalize(vec)
     # --------------------------------------------------
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
         """
