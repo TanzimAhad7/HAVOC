@@ -5,6 +5,8 @@ from typing import Optional, Dict, Any
 
 from datasets import load_dataset  # type: ignore
 
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+
 
 # ============================================================
 #  Helper: Force all values to strings (fixes pyarrow casting)
@@ -151,7 +153,7 @@ def main() -> None:
         dataset_name="tatsu-lab/alpaca",
         config_name=None,
         column_name="instruction",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/alpaca_benign.json",
+        output_file=f"{PARENT_PATH}/dataset/alpaca_benign.json",
         label="benign",
         source="tatsu-lab/alpaca",
         id_prefix="b",
@@ -166,7 +168,7 @@ def main() -> None:
         dataset_name="allenai/wildguardmix",
         config_name="wildguardtrain",
         column_name="prompt",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_direct.json",
+        output_file=f"{PARENT_PATH}/dataset/wildcomposed_direct.json",
         label="direct",
         source="allenai/wildguardmix",
         id_prefix="h",
@@ -183,7 +185,7 @@ def main() -> None:
         dataset_name="allenai/wildjailbreak",
         config_name="train",
         column_name="adversarial",
-        output_file="/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_composed.json",
+        output_file=f"{PARENT_PATH}/dataset/wildcomposed_composed.json",
         label="composed",
         source="allenai/wildjailbreak",
         id_prefix="j",
@@ -196,9 +198,9 @@ def main() -> None:
     # ------------------------------------------------------------
     # 4. direct — AdvBench (FIXED HERE)
     # ------------------------------------------------------------
-    advbench_full = "/home/tahad/HAVOC/HAVOC/dataset/advbench_full.json"
-    advbench_anchor = "/home/tahad/HAVOC/HAVOC/dataset/advbench_anchor.json"
-    advbench_eval = "/home/tahad/HAVOC/HAVOC/dataset/advbench_eval.json"
+    advbench_full = f"{PARENT_PATH}/dataset/advbench_full.json"
+    advbench_anchor = f"{PARENT_PATH}/dataset/advbench_anchor.json"
+    advbench_eval = f"{PARENT_PATH}/dataset/advbench_eval.json"
 
     convert_dataset(
         dataset_name="walledai/AdvBench",
@@ -228,5 +230,5 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# CUDA_VISIBLE_DEVICES=3 nohup python Dataset_preparation.py > /home/tahad/HAVOC/HAVOC/logs/Dataset_preparation.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python Dataset_preparation.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/Dataset_preparation.log  2>&1 &
  

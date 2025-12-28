@@ -31,6 +31,8 @@ import random
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+
 # ============================================================
 #  GPU CHECK — Ensure we are actually using CUDA/H100
 # ============================================================
@@ -40,11 +42,11 @@ device = torch.device("cuda")
 # ============================================================
 #  FILE PATHS — Hardcoded dataset paths for static extraction
 # ============================================================
-alpaca_file    = "/home/tahad/HAVOC/HAVOC/dataset/alpaca_benign.json"
-direct_file   = "/home/tahad/HAVOC/HAVOC/dataset/advbench_anchor.json"
-composed_file = "/home/tahad/HAVOC/HAVOC/dataset/wildcomposed_composed.json"
+alpaca_file    = f"{PARENT_PATH}/dataset/alpaca_benign.json"
+direct_file   = f"{PARENT_PATH}/dataset/advbench_anchor.json"
+composed_file = f"{PARENT_PATH}/dataset/wildcomposed_composed.json"
 
-out_dir = "/home/tahad/HAVOC/HAVOC/output/activations"
+out_dir = f"{PARENT_PATH}/output/activations"
 os.makedirs(out_dir, exist_ok=True)
 
 # ============================================================
@@ -270,4 +272,4 @@ def extract_activation_dynamic(prompt: str, layer: int = 20) -> np.ndarray:
 if __name__ == "__main__":
     run_static_extraction()
 
-#CUDA_VISIBLE_DEVICES=3 nohup python module1_Activation_Extraction.py > /home/tahad/HAVOC/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python module1_Activation_Extraction.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &

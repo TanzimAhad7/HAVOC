@@ -26,12 +26,13 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from umap import UMAP
 
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
 # ============================================================
 # PATHS
 # ============================================================
-ACT_DIR = "/home/tahad/HAVOC/HAVOC/output/activations"
-OUT_DIR = "/home/tahad/HAVOC/HAVOC/output/analysis/module4"
-SUBSPACE_DIR = "/home/tahad/HAVOC/HAVOC/output/subspace"
+ACT_DIR = f"{PARENT_PATH}/output/activations"
+OUT_DIR = f"{PARENT_PATH}/output/analysis/module4"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
 
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(SUBSPACE_DIR, exist_ok=True)
