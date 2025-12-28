@@ -90,7 +90,7 @@ class AdaptiveDefensePolicy:
         mu_HJ: Optional[np.ndarray] = None,
         W: Optional[np.ndarray] = None,
         # ---------- Defense trigger ----------
-        risk_threshold: float = 0.4,
+        risk_threshold: float = 0.2,
         # ---------- Adaptive controller ----------
         base_strength: float = 0.05,
         adapt_up: float = 1.1,
@@ -303,27 +303,36 @@ class AdaptiveDefensePolicy:
         """
         fP = fP.astype(self.memory_dtype)
         risk_now = self.compute_risk(fP)
+        if risk_now > self.risk_threshold:
+            print(
+                f"[DEFENSE TRIGGERED] "
+                f"risk={risk_now:.4f} > threshold={self.risk_threshold:.4f}"
+            )
 
         # Default: no correction
         delta_used = None
         vec = fP
 
         if risk_now > self.risk_threshold:
-            # -------------- (1) memory fast-path --------------
             learned_delta = self._lookup_memory(fP)
 
             if learned_delta is not None:
-                # We have seen a similar risky direction before.
-                # Use the same correction immediately.
                 delta_used = learned_delta.astype(self.memory_dtype)
-                vec = fP + delta_used
+                source = "memory"
             else:
-                # -------------- (2) online computed correction --------------
                 delta_used = self.get_intervention(fP)
-                vec = fP + delta_used
-
-                # store this experience for future repeated attacks
+                source = "online"
                 self._store_memory(fP, delta_used)
+
+            vec = fP + delta_used
+
+            # LOG DELTA STRENGTH
+            print(
+                f"[DEFENSE APPLIED] "
+                f"source={source} | "
+                f"delta_norm={np.linalg.norm(delta_used):.6f}"
+            )
+
 
         # --------------------------------------------------
         # OPTIONAL: project into subspace geometry
