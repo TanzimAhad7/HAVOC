@@ -90,7 +90,7 @@ class AdaptiveDefensePolicy:
         mu_HJ: Optional[np.ndarray] = None,
         W: Optional[np.ndarray] = None,
         # ---------- Defense trigger ----------
-        risk_threshold: float = 0.4,
+        risk_threshold: float = 0.2,
         # ---------- Adaptive controller ----------
         base_strength: float = 0.05,
         adapt_up: float = 1.1,
