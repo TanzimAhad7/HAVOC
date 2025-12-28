@@ -26,12 +26,13 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from umap import UMAP
 
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
 # ============================================================
 # PATHS
 # ============================================================
-ACT_DIR = "/home/tahad/HAVOC/HAVOC/output/activations"
-OUT_DIR = "/home/tahad/HAVOC/HAVOC/output/analysis/module4"
-SUBSPACE_DIR = "/home/tahad/HAVOC/HAVOC/output/subspace"
+ACT_DIR = f"{PARENT_PATH}/output/activations"
+OUT_DIR = f"{PARENT_PATH}/output/analysis/module4"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
 
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(SUBSPACE_DIR, exist_ok=True)
@@ -178,4 +179,4 @@ if __name__ == "__main__":
     run_direct_space_construction(LAYER, TOP_K)
 
 
-#CUDA_VISIBLE_DEVICES=3 nohup python module4_direct_representaiton_space.py > /home/tahad/HAVOC/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &
+#CUDA_VISIBLE_DEVICES=3 nohup python module4_direct_representaiton_space.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &

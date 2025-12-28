@@ -24,11 +24,13 @@ centroids and concept vectors without duplicating path logic.
 import os
 import numpy as np
 
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+
 # ============================================================
 #  PATHS (match Module 1 outputs)
 # ============================================================
-ACTIVATION_DIR = "/home/tahad/HAVOC/HAVOC/output/activations"
-OUT_DIR        = "/home/tahad/HAVOC/HAVOC/output/concepts"
+ACTIVATION_DIR = f"{PARENT_PATH}/output/activations"
+OUT_DIR        = f"{PARENT_PATH}/output/concepts"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # Use the selected layer (default: 20)
@@ -124,4 +126,4 @@ def load_concepts(layer: int = LAYER, concept_dir: str = OUT_DIR):
 if __name__ == "__main__":
     run_concept_construction(LAYER)
 
-#CUDA_VISIBLE_DEVICES=3 nohup python module2_concept_vector_construction.py > /home/tahad/HAVOC/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python module2_concept_vector_construction.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &

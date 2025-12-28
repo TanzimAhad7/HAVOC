@@ -272,4 +272,4 @@ def extract_activation_dynamic(prompt: str, layer: int = 20) -> np.ndarray:
 if __name__ == "__main__":
     run_static_extraction()
 
-#CUDA_VISIBLE_DEVICES=3 nohup python module1_Activation_Extraction.py > /home/tahad/HAVOC/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python module1_Activation_Extraction.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &
