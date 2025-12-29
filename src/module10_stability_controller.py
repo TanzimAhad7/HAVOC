@@ -1,158 +1,246 @@
 """
-Module 10 – Stability & Convergence Controller
-==============================================
+Module 10 — Stability & Convergence Controller (USENIX-grade)
+=============================================================
 
-This module implements a simple stability detector used in HAVOC++ to
-determine when the attacker-defender game has converged. Stability is
-declared when the latent risk has remained within a small range over
-several consecutive rounds or when a maximum number of rounds has
-been exceeded. The controller maintains a history of recent risk
-values and checks whether the maximum variation in this window falls
-below a given tolerance. Users may adjust the window size, the
-tolerance and the maximum number of rounds to tailor the sensitivity
-of the detector.
+This module determines WHEN the HAVOC++ attacker–defender game
+has converged, and HOW it converged.
 
-The stability controller is agnostic to how risk is computed; it
-operates purely on the numeric values supplied by the defence policy.
+Key design principles:
+----------------------
+1. Convergence is a PROPERTY OF THE GAME, not a threshold crossing.
+2. No dependence on Optimus-V decision thresholds.
+3. No magic constants like "risk < 0.35".
+4. Allows oscillation, probing, and adaptive attackers.
+5. Distinguishes:
+   - stable & safe convergence
+   - stable but unsafe convergence
+   - non-convergence (timeout)
+
+Core idea:
+----------
+A system is converged if:
+(A) The defender repeatedly suppresses harm, AND
+(B) The attacker can no longer escalate its achievable risk.
+
+This matches repeated-game / robust-control definitions of stability.
 """
 
 from __future__ import annotations
-
 from collections import deque
-from typing import Deque
+from typing import Deque, List
 
 
 class StabilityController:
-    """Detect convergence of the latent attacker-defender game.
+    """
+    Detects convergence of the HAVOC++ attacker–defender game.
 
-    This controller declares the system stable once the variation of
-    risk values across a sliding window falls below a specified
-    tolerance or when the number of rounds reaches a preset maximum.
+    IMPORTANT:
+    ----------
+    This controller is *agnostic* to how risk is computed.
+    It operates purely on numeric risk trajectories supplied
+    by Module 9 (AdaptiveDefensePolicy).
 
-    Args:
-        window: Number of recent rounds to consider when checking
-            stability. A larger window makes the detector less
-            sensitive to short-term fluctuations.
-        tolerance: Maximum allowed difference between the largest and
-            smallest risk values within the window. If the variation
-            is below this threshold, the system is considered
-            converged.
-        max_rounds: Upper bound on the total number of rounds before
-            forcing termination. This prevents infinite loops if the
-            attacker and defender oscillate.
-        risk_cap: Maximum acceptable risk for a "successful" defense.
-            This is separate from convergence - a system can converge
-            to a high-risk state (defense failure) or a low-risk state
-            (defense success).
+    It reasons about *patterns over time*, not single rounds.
     """
 
     def __init__(
-        self, 
-        window: int = 3, 
-        tolerance: float = 1e-3, 
-        max_rounds: int = 10, 
-        risk_cap: float = 0.35
+        self,
+        window: int = 5,
+        min_suppressed: int = 3,
+        suppression_tau: float = 0.05,
+        escalation_eps: float = 0.01,
+        max_rounds: int = 30,
     ) -> None:
+        """
+        Parameters
+        ----------
+        window (W):
+            Number of recent rounds considered when evaluating convergence.
+            Larger values make convergence more conservative.
+
+            Example:
+                W = 5 → look at last 5 rounds
+
+        min_suppressed (K):
+            Minimum number of rounds (within the window) where the
+            defended risk must be suppressed.
+
+            Example:
+                K = 3 → at least 3 of last 5 rounds suppressed
+
+        suppression_tau (τ):
+            Threshold below which defended risk is considered
+            "effectively neutralized".
+
+            IMPORTANT:
+            ----------
+            - This is NOT a jailbreak decision threshold.
+            - It is a *relative suppression tolerance*.
+            - Small residual risk is allowed.
+
+            Typical value:
+                τ ≈ 0.05
+
+        escalation_eps (ε):
+            Maximum allowed increase in attacker raw risk across windows.
+
+            This prevents false convergence when the attacker
+            is still improving but defense temporarily masks it.
+
+            Example:
+                ε = 0.01 → attacker gains must be negligible
+
+        max_rounds:
+            Hard stop to prevent infinite attacker–defender oscillations.
+            Reaching this does NOT imply convergence.
+        """
+
         self.window = int(window)
-        self.tolerance = float(tolerance)
+        self.min_suppressed = int(min_suppressed)
+        self.suppression_tau = float(suppression_tau)
+        self.escalation_eps = float(escalation_eps)
         self.max_rounds = int(max_rounds)
-        self.risk_cap = float(risk_cap)
+
         self.reset()
 
     def reset(self) -> None:
-        """Reset the internal history at the start of a new game."""
-        self.risk_history: Deque[float] = deque(maxlen=self.window)
-        self.round = 0
-        self._converged = False
-        self._convergence_reason = None
-
-    def update(self, risk: float) -> bool:
-        """Update the stability controller with a new risk value.
-
-        Args:
-            risk: Latest risk value measured by the defence policy.
-
-        Returns:
-            ``True`` if the system has converged or reached the maximum
-            number of rounds, otherwise ``False``.
         """
-        self.risk_history.append(float(risk))
+        Reset controller state at the start of a new intent/game.
+        """
+
+        # History of defended risk values r_def[t]
+        self.risk_def_history: Deque[float] = deque(maxlen=2 * self.window)
+
+        # History of raw (pre-defense) risk values r_raw[t]
+        self.risk_raw_history: Deque[float] = deque(maxlen=2 * self.window)
+
+        self.round: int = 0
+        self._converged: bool = False
+        self._convergence_reason: str | None = None
+
+    def update(self, risk_raw: float, risk_def: float) -> bool:
+        """
+        Update the convergence controller with the latest risks.
+
+        Parameters
+        ----------
+        risk_raw:
+            Attacker's achievable risk BEFORE defense at round t.
+
+            Measures:
+                - attacker capability
+                - whether attacker is still learning / escalating
+
+        risk_def:
+            Residual risk AFTER defense at round t.
+
+            Measures:
+                - defender effectiveness
+                - suppression success
+
+        Returns
+        -------
+        True  → convergence detected (or forced stop)
+        False → continue the game
+        """
+
         self.round += 1
-        
-        # Wait until the window is filled before checking stability
+        self.risk_raw_history.append(float(risk_raw))
+        self.risk_def_history.append(float(risk_def))
+
+        # Not enough data yet to evaluate convergence
         if self.round < self.window:
             return False
-        
-        # Compute maximum variation in the sliding window
-        max_risk = max(self.risk_history)
-        min_risk = min(self.risk_history)
-        variation = max_risk - min_risk
-        
-        # Check for convergence (variation is small)
-        if variation <= self.tolerance:
+
+        # ============================================================
+        # (A) RECURRENT SUPPRESSION CHECK
+        # ============================================================
+        # Count how many recent rounds are effectively suppressed.
+        #
+        # We do NOT require perfect suppression.
+        # We require REPEATED suppression.
+        # ============================================================
+
+        recent_def = list(self.risk_def_history)[-self.window:]
+
+        suppressed_count = sum(
+            r <= self.suppression_tau for r in recent_def
+        )
+
+        recurrent_suppression = suppressed_count >= self.min_suppressed
+
+        # ============================================================
+        # (B) NO ATTACKER ESCALATION CHECK
+        # ============================================================
+        # Compare attacker strength across two consecutive windows.
+        #
+        # This prevents declaring convergence when the attacker
+        # is still improving but the defense temporarily masks it.
+        # ============================================================
+
+        bounded_attacker = False
+
+        if len(self.risk_raw_history) >= 2 * self.window:
+            recent_raw = list(self.risk_raw_history)[-self.window:]
+            prev_raw = list(self.risk_raw_history)[-2 * self.window : -self.window]
+
+            max_recent = max(recent_raw)
+            max_prev = max(prev_raw)
+
+            # Attacker improvement must be negligible
+            bounded_attacker = (max_recent - max_prev) <= self.escalation_eps
+
+        # ============================================================
+        # CONVERGENCE DECISION
+        # ============================================================
+
+        if recurrent_suppression and bounded_attacker:
             self._converged = True
-            if max_risk <= self.risk_cap:
+
+            # Safe vs unsafe convergence classification
+            if max(recent_def) <= self.suppression_tau:
                 self._convergence_reason = "stable_safe"
             else:
                 self._convergence_reason = "stable_unsafe"
+
             return True
-        
-        # Force stop after max rounds (may not be truly converged)
+
+        # ============================================================
+        # HARD STOP (NON-CONVERGENCE)
+        # ============================================================
+
         if self.round >= self.max_rounds:
             self._converged = True
             self._convergence_reason = "max_rounds_reached"
             return True
-        
+
         return False
 
-    def is_successful_defense(self) -> bool:
-        """Check if the system converged to a safe state.
-
-        Returns:
-            True if converged AND all recent risks are below risk_cap.
-            
-        Note: This should only be called after convergence (update() returns True).
-        """
-        if len(self.risk_history) < self.window:
-            return False
-        return max(self.risk_history) <= self.risk_cap
-
     def get_convergence_info(self) -> dict:
-        """Get detailed information about convergence state.
-        
-        Returns:
-            Dictionary with convergence metrics:
-            - converged: bool, whether system has converged
-            - reason: str, why convergence occurred
-            - final_risk: float, most recent risk value
-            - max_risk_in_window: float, highest risk in window
-            - min_risk_in_window: float, lowest risk in window
-            - variation: float, risk variation in window
-            - rounds: int, total rounds elapsed
-            - successful_defense: bool, converged to safe state
         """
-        if len(self.risk_history) == 0:
+        Return a full convergence diagnostic for logging and analysis.
+        This is what should be written to disk and reported in the paper.
+        """
+
+        if not self.risk_def_history:
             return {
                 "converged": False,
                 "reason": None,
-                "final_risk": None,
-                "max_risk_in_window": None,
-                "min_risk_in_window": None,
-                "variation": None,
                 "rounds": self.round,
-                "successful_defense": False,
             }
-        
-        max_risk = max(self.risk_history)
-        min_risk = min(self.risk_history)
-        
+
+        recent_def = list(self.risk_def_history)[-self.window:]
+        recent_raw = list(self.risk_raw_history)[-self.window:]
+
         return {
             "converged": self._converged,
             "reason": self._convergence_reason,
-            "final_risk": float(self.risk_history[-1]),
-            "max_risk_in_window": float(max_risk),
-            "min_risk_in_window": float(min_risk),
-            "variation": float(max_risk - min_risk),
             "rounds": self.round,
-            "successful_defense": self.is_successful_defense(),
+            "window": self.window,
+            "min_suppressed": self.min_suppressed,
+            "suppression_tau": self.suppression_tau,
+            "escalation_eps": self.escalation_eps,
+            "recent_defended_risk": recent_def,
+            "recent_raw_risk": recent_raw,
+            "suppressed_rounds": sum(r <= self.suppression_tau for r in recent_def),
         }

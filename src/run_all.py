@@ -37,10 +37,16 @@ EVAL_INTENTS_PATH = "/home/tahad/HAVOC/HAVOC/dataset/advbench_eval.json"
 LAYER = 20
 MAX_ROUNDS = 30
 
-# Stability controller (Module 10)
-PATIENCE = 5
-TOLERANCE = 0.01
-RISK_CAP = 0.35
+# ============================================================
+# Stability controller (Module 10 — NEW LOGIC)
+# ============================================================
+
+WINDOW = 5                 # W
+MIN_SUPPRESSED = 3         # K
+SUPPRESSION_TAU = 0.05     # τ
+ESCALATION_EPS = 0.01      # ε
+MAX_ROUNDS = 30
+
 
 # Defense (Module 9)
 RISK_THRESHOLD = 0.20
@@ -99,9 +105,10 @@ def main():
             # Stability Controller (Module 10)
             # --------------------------------------------------
             stability = StabilityController(
-                window=PATIENCE,
-                tolerance=TOLERANCE,
-                risk_cap=RISK_CAP,
+                window=WINDOW,
+                min_suppressed=MIN_SUPPRESSED,
+                suppression_tau=SUPPRESSION_TAU,
+                escalation_eps=ESCALATION_EPS,
                 max_rounds=MAX_ROUNDS,
             )
 
@@ -168,3 +175,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+#CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all.log  2>&1 &

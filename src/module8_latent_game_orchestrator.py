@@ -119,7 +119,11 @@ class LatentGameOrchestrator:
             # ==============================
             # (C) STABILITY CHECK (Module 10)
             # ==============================
-            stable = self.stability_controller.update(risk_def)
+            stable = self.stability_controller.update(
+                risk_raw=risk_raw,
+                risk_def=risk_def,
+            )
+
             if stable:
                 print(f"  [ROUND {round_idx+1}] CONVERGED — stopping game")
 

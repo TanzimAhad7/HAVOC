@@ -30,9 +30,9 @@ os.makedirs(FUZZED_DIR, exist_ok=True)
 # Config (for batch fuzzing)
 LAYER_ID       = 20
 TOP_K          = 10       # number of PCA components to sample
-NUM_SAMPLES    = 200      # total candidate vectors to sample
+NUM_SAMPLES    = 100      # total candidate vectors to sample
 NOISE_SCALE    = 0.20     # how much random noise to add
-TOP_N_TO_SAVE  = 50       # how many to keep
+TOP_N_TO_SAVE  = 30       # how many to keep
 
 random.seed(42)
 np.random.seed(42)
