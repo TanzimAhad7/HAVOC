@@ -37,7 +37,7 @@ class LatentGameOrchestrator:
         defence_policy: AdaptiveDefensePolicy,
         stability_controller: StabilityController,
         *,
-        max_iters: int = 15,
+        max_iters: int = 30,
         layer: int = 20,
         attacker_seed: int = 0,
         verbose: bool = False,
@@ -125,7 +125,12 @@ class LatentGameOrchestrator:
             )
 
             if stable:
-                print(f"  [ROUND {round_idx+1}] CONVERGED — stopping game")
+                info = self.stability_controller.get_convergence_info()
+                reason = info.get("reason", "unknown")
+                print(
+                    f"  [ROUND {round_idx+1}] CONVERGED ({reason}) — stopping game"
+                )
+                break
 
             # ==============================
             # (D) LOGGING

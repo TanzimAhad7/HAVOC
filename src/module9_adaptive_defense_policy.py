@@ -191,9 +191,13 @@ class AdaptiveDefensePolicy:
         # PROJECT CONSISTENTLY (same rule as Optimus-V)
         # --------------------------------------------------
         if self.W is not None and self.mu_HJ is not None:
+            # Mean-center ONLY activations (points)
             fP_s = self._l2_normalize(self.W @ (fP_u - self.mu_HJ))
-            vD_s = self._l2_normalize(self.W @ (self.v_direct - self.mu_HJ))
-            vJ_s = self._l2_normalize(self.W @ (self.v_jb - self.mu_HJ))
+
+            # Concept vectors are DIRECTIONS — do NOT mean-center
+            vD_s = self._l2_normalize(self.W @ self.v_direct)
+            vJ_s = self._l2_normalize(self.W @ self.v_jb)
+
         elif self.W is not None:
             fP_s = self._l2_normalize(self.W @ fP_u)
             vD_s = self._l2_normalize(self.W @ self.v_direct)
@@ -281,6 +285,14 @@ class AdaptiveDefensePolicy:
         direction = self._l2_normalize(direction.astype(self.memory_dtype))
 
         delta = (self.strength * direction).astype(self.memory_dtype)
+
+        # SAFETY CHECK: ensure monotonic risk reduction
+        original_risk = self.compute_risk(fP)
+        new_risk = self.compute_risk(fP + delta)
+
+        if new_risk > original_risk:
+            delta = -delta
+
         return delta
     
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
