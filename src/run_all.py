@@ -13,7 +13,6 @@ This script:
 
 This is the MAIN experiment used in the paper.
 """
-
 import json
 import os
 from tqdm import tqdm
@@ -27,12 +26,14 @@ from module10_stability_controller import StabilityController
 
 torch.set_grad_enabled(False)
 
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+
 # ============================================================
 # CONFIG
 # ============================================================
 
-OUTPUT_PATH = "/home/tahad/HAVOC/HAVOC/output/havoc_traces.jsonl"
-EVAL_INTENTS_PATH = "/home/tahad/HAVOC/HAVOC/dataset/advbench_eval.json"
+OUTPUT_PATH = f"{PARENT_PATH}/output/havoc_traces.jsonl"
+EVAL_INTENTS_PATH = f"{PARENT_PATH}/dataset/advbench_eval.json"
 
 LAYER = 20
 MAX_ROUNDS = 30
@@ -53,7 +54,6 @@ RISK_THRESHOLD = 0.0
 LAMBDA_INIT = 0.1
 ADAPT_UP = 1.2
 ADAPT_DOWN = 0.95
-
 
 # ============================================================
 # MAIN
@@ -177,4 +177,4 @@ if __name__ == "__main__":
     main()
 
 
-#CUDA_VISIBLE_DEVICES=2 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all.log  2>&1 &
