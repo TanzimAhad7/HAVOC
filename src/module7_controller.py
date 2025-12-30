@@ -69,15 +69,15 @@ ATTACKER_MODE = "HYBRID"
 # ============================================================
 
 # Decoder-bias strength for concept-aligned sampling
-CONCEPT_BIAS_STRENGTH = 3.0
+CONCEPT_BIAS_STRENGTH = 2.0
 
 # Fuzz generation sampling params
-FUZZ_TEMPERATURE = 0.95
-FUZZ_TOP_P = 0.95
+FUZZ_TEMPERATURE = 0.90
+FUZZ_TOP_P = 0.90
 
 # Steer generation sampling params
 STEER_TEMPERATURE = 0.80
-STEER_TOP_P = 0.95
+STEER_TOP_P = 0.90
 
 # Default steering magnitude for attacker internal steering (if used)
 DEFAULT_STEER_ALPHA = 0.05

@@ -90,18 +90,18 @@ class AdaptiveDefensePolicy:
         mu_HJ: Optional[np.ndarray] = None,
         W: Optional[np.ndarray] = None,
         # ---------- Defense trigger ----------
-        risk_threshold: float = 0.2,
+        risk_threshold: float = 0.0,
         # ---------- Adaptive controller ----------
         base_strength: float = 0.05,
-        adapt_up: float = 1.1,
+        adapt_up: float = 1.2,
         adapt_down: float = 0.9,
         strength_min: float = 0.01,
         strength_max: float = 1.0,
         deadband: float = 1e-3,
-        ema_beta: float = 0.8,
+        ema_beta: float = 0.5,
         # ---------- Learned memory ----------
         memory_capacity: int = 512,
-        memory_similarity: float = 0.95,
+        memory_similarity: float = 0.90,
         # store vectors in float32 to control RAM use
         memory_dtype=np.float32,
     ) -> None:
@@ -213,8 +213,8 @@ class AdaptiveDefensePolicy:
         r_direct = float(np.dot(fP_s, vD_s))
         r_jb = float(np.dot(fP_s, vJ_s))
 
-        return max(0.0, r_direct, r_jb)
-
+        risk = np.sqrt(max(0.0, r_direct)**2 + max(0.0, r_jb)**2)
+        return float(risk)
 
     # --------------------------------------------------
     def _lookup_memory(self, fP: np.ndarray) -> Optional[np.ndarray]:
@@ -234,10 +234,10 @@ class AdaptiveDefensePolicy:
 
         fP_u = self._l2_normalize(fP.astype(self.memory_dtype))
 
-        # Linear scan (capacity is small; O(M*D) is fine)
-        for u_mem, delta_mem in self.memory:
+        for u_mem, d_dir in self.memory:
             if float(np.dot(fP_u, u_mem)) >= self.memory_similarity:
-                return delta_mem
+                # Rescale with CURRENT lambda
+                return (self.strength * d_dir).astype(self.memory_dtype)
 
         return None
 
@@ -257,43 +257,54 @@ class AdaptiveDefensePolicy:
             self.memory.pop(0)
 
         u = self._l2_normalize(fP.astype(self.memory_dtype))
-        d = delta.astype(self.memory_dtype)
+        d_dir = self._l2_normalize(delta.astype(self.memory_dtype))
+        self.memory.append((u, d_dir))
 
-        self.memory.append((u, d))
 
     # --------------------------------------------------
     def get_intervention(self, fP: np.ndarray) -> np.ndarray:
         """
-        Compute a NEW latent correction vector (online policy).
-
-        Idea:
-          - measure how strongly fP aligns with v_direct and v_jb
-          - move AWAY from both, weighted by the relative activation
-          - scale by current strength λ
-
-        Output:
-          delta = λ * direction_away_from_harm
+        Activation-conditioned latent correction.
+        Defense direction adapts to WHERE the attacker currently is.
         """
+
         fP_u = self._l2_normalize(fP.astype(self.memory_dtype))
 
-        s_d = max(0.0, float(np.dot(fP_u, self.v_direct)))
-        s_j = max(0.0, float(np.dot(fP_u, self.v_jb)))
+        # Activation-conditioned projections
+        proj_d = max(0.0, float(np.dot(fP_u, self.v_direct)))
+        proj_j = max(0.0, float(np.dot(fP_u, self.v_jb)))
 
-        total = s_d + s_j + 1e-9
+        total = proj_d + proj_j + 1e-9
 
-        direction = -(s_d * self.v_direct + s_j * self.v_jb) / total
+        # Direction AWAY from current attacker-aligned harm
+        direction = -(proj_d * self.v_direct + proj_j * self.v_jb) / total
         direction = self._l2_normalize(direction.astype(self.memory_dtype))
+
+        # --------------------------------------------------
+        # Orthogonal jitter (anti-memorization)
+        # --------------------------------------------------
+        noise = np.random.normal(0, 1, size=direction.shape).astype(self.memory_dtype)
+
+        # Remove component parallel to defense direction
+        noise = noise - np.dot(noise, direction) * direction
+        noise = self._l2_normalize(noise)
+
+        # Small orthogonal perturbation
+        direction = self._l2_normalize(direction + 0.10 * noise)
+
+
+        # --------------------------------------------------
+        # (Improvement 2 added below)
+        # --------------------------------------------------
 
         delta = (self.strength * direction).astype(self.memory_dtype)
 
-        # SAFETY CHECK: ensure monotonic risk reduction
-        original_risk = self.compute_risk(fP)
-        new_risk = self.compute_risk(fP + delta)
-
-        if new_risk > original_risk:
+        # Monotonic safety check
+        if self.compute_risk(fP + delta) > self.compute_risk(fP):
             delta = -delta
 
         return delta
+
     
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
         fP = fP.astype(self.memory_dtype)

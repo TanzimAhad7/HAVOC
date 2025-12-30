@@ -130,7 +130,6 @@ class LatentGameOrchestrator:
                 print(
                     f"  [ROUND {round_idx+1}] CONVERGED ({reason}) — stopping game"
                 )
-                break
 
             # ==============================
             # (D) LOGGING

@@ -41,18 +41,18 @@ MAX_ROUNDS = 30
 # Stability controller (Module 10 — NEW LOGIC)
 # ============================================================
 
-WINDOW = 5                 # W
-MIN_SUPPRESSED = 3         # K
-SUPPRESSION_TAU = 0.05     # τ
+WINDOW = 7                 # W
+MIN_SUPPRESSED = 4         # K
+SUPPRESSION_TAU = 0.10     # τ
 ESCALATION_EPS = 0.01      # ε
 MAX_ROUNDS = 30
 
 
 # Defense (Module 9)
-RISK_THRESHOLD = 0.20
-LAMBDA_INIT = 0.20
-ADAPT_UP = 1.10
-ADAPT_DOWN = 0.90
+RISK_THRESHOLD = 0.0
+LAMBDA_INIT = 0.1
+ADAPT_UP = 1.2
+ADAPT_DOWN = 0.95
 
 
 # ============================================================

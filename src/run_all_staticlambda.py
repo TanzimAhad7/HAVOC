@@ -80,7 +80,7 @@ def main():
                 v_jb=v_jb,
                 mu_HJ=mu_HJ,
                 W=W,
-                risk_threshold=0.40,
+                risk_threshold=0.0,
                 base_strength=STATIC_LAMBDA,
                 adapt_up=1.0,    # <-- DISABLE ADAPTATION
                 adapt_down=1.0,
