@@ -148,6 +148,11 @@ class AdaptiveDefensePolicy:
         self.last_delta: Optional[np.ndarray] = None       # raw correction applied
         self.last_delta_dir: Optional[np.ndarray] = None   # normalized direction of correction
         self.last_defended_fP: Optional[np.ndarray] = None # defended activation (optional bookkeeping)
+        # Track the source of the most recent intervention ("memory", "online" or "none").
+        # This is recorded so that downstream logging can capture which mechanism
+        # produced the correction used by apply_intervention().  See run_all.py and
+        # Module 8 for usage.
+        self.last_source: Optional[str] = None
 
         self.reset()
 
@@ -173,6 +178,7 @@ class AdaptiveDefensePolicy:
         self.last_delta = None
         self.last_delta_dir = None
         self.last_defended_fP = None
+        self.last_source = None
 
     # --------------------------------------------------
     def compute_risk(self, fP: np.ndarray) -> float:
@@ -330,12 +336,18 @@ class AdaptiveDefensePolicy:
             # SINGLE, CLEAN LOG (what you asked for)
             print(f"[DEFENSE] source={source}")
 
+        # Normalise regardless of whether any intervention occurred
         vec = self._l2_normalize(vec)
 
+        # Expose last intervention information for downstream logging
         self.last_delta = delta_used
         self.last_delta_dir = (
             self._l2_normalize(delta_used) if delta_used is not None else None
         )
+        # Store the defended activation for possible inspection
+        self.last_defended_fP = vec
+        # Record the source of the intervention
+        self.last_source = source
 
         return vec
 
