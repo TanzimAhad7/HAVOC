@@ -19,12 +19,14 @@ import os
 import numpy as np
 import random
 
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+
 __all__ = ["fuzz_sample", "main"]
 
 # Paths
-CONCEPT_DIR  = "/home/tahad/HAVOC/HAVOC/output/concepts"
-SUBSPACE_DIR = "/home/tahad/HAVOC/HAVOC/output/subspace"
-FUZZED_DIR   = "/home/tahad/HAVOC/HAVOC/output/fuzzed"
+CONCEPT_DIR  = f"{PARENT_PATH}/output/concepts"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
+FUZZED_DIR   = f"{PARENT_PATH}/output/fuzzed"
 os.makedirs(FUZZED_DIR, exist_ok=True)
 
 # Config (for batch fuzzing)

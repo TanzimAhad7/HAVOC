@@ -14,7 +14,6 @@ Key properties:
 
 This is the PRIMARY experiment driver for the HAVOC++ paper.
 """
-
 import json
 import os
 from tqdm import tqdm
@@ -29,12 +28,14 @@ from module10_stability_controller import StabilityController
 # Disable gradients globally (pure inference / control loop)
 torch.set_grad_enabled(False)
 
-# =====================================================================
-# CONFIGURATION
-# =====================================================================
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC/dataset/"
 
-OUTPUT_PATH = "/home/tahad/HAVOC/HAVOC/output/havoc_traces.jsonl"
-EVAL_INTENTS_PATH = "/home/tahad/HAVOC/HAVOC/dataset/advbench_eval.json"
+# ============================================================
+# CONFIG
+# ============================================================
+
+OUTPUT_PATH = f"{PARENT_PATH}/output/havoc_traces.jsonl"
+EVAL_INTENTS_PATH = f"{PARENT_PATH}/dataset/advbench_eval.json"
 
 LAYER = 20
 MAX_ROUNDS = 30

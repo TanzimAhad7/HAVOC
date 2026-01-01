@@ -16,15 +16,17 @@ import numpy as np
 import torch
 from contextlib import contextmanager
 
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+
 __all__ = ["refine_vectors", "steer_in_direct_space", "steer_hidden_state"]
 
 # ----------------------------------------
 # Configuration and Paths
 # ----------------------------------------
-CONCEPT_DIR  = "/home/tahad/HAVOC/HAVOC/output/concepts"
-SUBSPACE_DIR = "/home/tahad/HAVOC/HAVOC/output/subspace"
-FUZZED_DIR   = "/home/tahad/HAVOC/HAVOC/output/fuzzed"
-STEERED_DIR  = "/home/tahad/HAVOC/HAVOC/output/steered"
+CONCEPT_DIR  = f"{PARENT_PATH}/output/concepts"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
+FUZZED_DIR   = f"{PARENT_PATH}/output/fuzzed"
+STEERED_DIR  = f"{PARENT_PATH}/output/steered"
 os.makedirs(STEERED_DIR, exist_ok=True)
 
 LAYER_ID      = 20
