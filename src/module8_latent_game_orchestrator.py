@@ -70,6 +70,8 @@ class LatentGameOrchestrator:
     def safe_decoding_logits( self,
         fP: np.ndarray,
         lm_head,
+        risk: float,
+        isHavoc: bool = True,
     ):
         """
         Apply SafeDecoding to logits.
@@ -84,8 +86,12 @@ class LatentGameOrchestrator:
         # Raw logits from LM head
         logits = lm_head(fP_t)  # (vocab_size,)
 
-        # SafeDecoding shift
-        logits_safe = logits - self.defence_policy.strength * unsafe_alignment
+        if not isHavoc:
+            # SafeDecoding shift
+            logits_safe = logits - max(0, self.defence_policy.strength * unsafe_alignment)
+        else:
+            # Havoc SafeDecoding adjustment
+            logits_safe = logits - max(0, risk)
 
         return logits_safe, unsafe_alignment
 
@@ -97,6 +103,7 @@ class LatentGameOrchestrator:
             prompt: str,
             v_direct: np.ndarray,
             strength: float,
+            risk: float,
             layer: int = 20,
             max_new_tokens: int = 64,
             device: str = "cuda",
@@ -124,6 +131,7 @@ class LatentGameOrchestrator:
                 lm_head=self.model.lm_head,
                 v_direct=v_direct,
                 strength=strength,
+                risk=risk,
             )
 
             # Sample next token
@@ -214,6 +222,7 @@ class LatentGameOrchestrator:
                 prompt=best_prompt,
                 v_direct=self.v_direct,
                 strength=self.defence_policy.strength,
+                risk = risk_def,
                 layer=self.layer,
                 max_new_tokens=64,
                 device=DEVICE,
