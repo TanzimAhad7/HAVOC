@@ -19,10 +19,16 @@ from tqdm import trange
 
 
 from module1_Activation_Extraction import extract_activation_dynamic
-from module7_controller import HAVOC_Controller
+from module7_controller import HAVOC_Controller, SafeRewriterLLM
 from module9_adaptive_defense_policy import AdaptiveDefensePolicy
 from module10_stability_controller import StabilityController
+from model import HAVOCModelLoader
+import torch
+import torch.nn.functional as F
 
+MODEL_NAME: str = "meta-llama/Meta-Llama-3-8B-Instruct",
+DEVICE: str = "cuda"
+MAX_NEW_TOKENS = 128  # example
 
 class LatentGameOrchestrator:
     """Run the HAVOC++ attacker–defender game."""
@@ -53,7 +59,90 @@ class LatentGameOrchestrator:
         self.layer = int(layer)
         self.seed = int(attacker_seed)
         self.verbose = bool(verbose)
+        self.combined_risk = False  # Whether to combine risks
+        self.model, self.tokenizer = HAVOCModelLoader(MODEL_NAME, DEVICE).load()  # To be set if needed
 
+    # ======================================================
+    # 2. SafeDecoding (logit-level intervention)
+    # ======================================================
+    def safe_decoding_logits( self,
+        fP: np.ndarray,
+        lm_head,
+    ):
+        """
+        Apply SafeDecoding to logits.
+        """
+        device = next(lm_head.parameters()).device
+
+        fP_t = torch.tensor(fP, device=device, dtype=torch.float32)
+
+        # Alignment with harmful direction
+        unsafe_alignment = max(0.0, float(np.dot(fP, self.v_direct)))
+
+        # Raw logits from LM head
+        logits = lm_head(fP_t)  # (vocab_size,)
+
+        # SafeDecoding shift
+        logits_safe = logits - self.defence_policy.strength * unsafe_alignment
+
+        return logits_safe, unsafe_alignment
+
+    # ======================================================
+    # 3. Generate SAFE RESPONSE (autoregressive rollout)
+    #    (for visualization / demo only)
+    # ======================================================
+    def generate_safe_response(self,
+            prompt: str,
+            v_direct: np.ndarray,
+            strength: float,
+            layer: int = 20,
+            max_new_tokens: int = 64,
+            device: str = "cuda",
+        ):
+        # model.eval()
+
+        # Encode prompt
+        context = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+        generated_ids = []
+
+        for _ in range(max_new_tokens):
+
+            # Decode current context to text
+            current_text = self.tokenizer.decode(context[0], skip_special_tokens=True)
+
+            # Extract prompt-level activation
+            fP = extract_activation_dynamic(
+                current_text,
+                layer=layer
+            )
+
+            # SafeDecoding
+            logits_safe, _ = self.safe_decoding_logits(
+                fP=fP,
+                lm_head=self.model.lm_head,
+                v_direct=v_direct,
+                strength=strength,
+            )
+
+            # Sample next token
+            probs = F.softmax(logits_safe, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            # Append
+            generated_ids.append(next_token.item())
+            context = torch.cat([context, next_token.unsqueeze(0)], dim=-1)
+
+            # Early stop on EOS
+            if next_token.item() == self.tokenizer.eos_token_id:
+                break
+
+        # Decode safe response
+        safe_response = self.tokenizer.decode(
+            generated_ids,
+            skip_special_tokens=True,
+        )
+
+        return safe_response
     # ------------------------------------------------------------
     def _run_single_game(self, intent: str) -> Dict[str, Any]:
         """Run one attacker–defender game for a single intent."""
@@ -106,14 +195,34 @@ class LatentGameOrchestrator:
             defended_fP = self.defence_policy.apply_intervention(fP)
             risk_def = self.defence_policy.compute_risk(defended_fP)
 
-            # Update adaptive gain λ
-            self.defence_policy.update_policy(risk_def)
+            if self.combined_risk:
+                # Combine havoc risk and safeDecoding alignment-based risk
+                unsafe_alignment = max(0.0, np.dot(fP, self.v_direct))
+                combined_risk = max(
+                    risk_def,
+                    self.defence_policy.strength * unsafe_alignment
+                )
+                self.defence_policy.update_policy(combined_risk)
+            else:
+                # Update adaptive gain λ
+                self.defence_policy.update_policy(risk_def)
+
+            ## Apply SafeDecoding adjustment to logits
+            safe_text = self.generate_safe_response(
+                prompt=best_prompt,
+                v_direct=self.v_direct,
+                strength=self.defence_policy.strength,
+                layer=self.layer,
+                max_new_tokens=64,
+                device=DEVICE,
+            )
+            print("SAFE RESPONSE:\n", safe_text)
 
             print(
-            f"  [ROUND {round_idx+1}] "
-            f"risk_raw={risk_raw:.4f} "
-            f"risk_def={risk_def:.4f} "
-            f"lambda={self.defence_policy.strength:.4f}"
+                f"  [ROUND {round_idx+1}] "
+                f"risk_raw={risk_raw:.4f} "
+                f"risk_def={risk_def:.4f} "
+                f"lambda={self.defence_policy.strength:.4f}"
             )
 
             # ==============================

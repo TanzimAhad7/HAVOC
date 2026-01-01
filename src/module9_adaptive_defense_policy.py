@@ -52,11 +52,9 @@ Example: D = 4096 (Llama hidden size)
 
 So it is NOT 4 MB fixed. It scales with (capacity * hidden_dim).
 """
-
 from __future__ import annotations
 from typing import Optional, List, Tuple
 import numpy as np
-
 
 class AdaptiveDefensePolicy:
     """
@@ -260,7 +258,6 @@ class AdaptiveDefensePolicy:
         d_dir = self._l2_normalize(delta.astype(self.memory_dtype))
         self.memory.append((u, d_dir))
 
-
     # --------------------------------------------------
     def get_intervention(self, fP: np.ndarray) -> np.ndarray:
         """
@@ -292,7 +289,6 @@ class AdaptiveDefensePolicy:
         # Small orthogonal perturbation
         direction = self._l2_normalize(direction + 0.10 * noise)
 
-
         # --------------------------------------------------
         # (Improvement 2 added below)
         # --------------------------------------------------
@@ -304,7 +300,6 @@ class AdaptiveDefensePolicy:
             delta = -delta
 
         return delta
-
     
     def apply_intervention(self, fP: np.ndarray) -> np.ndarray:
         fP = fP.astype(self.memory_dtype)

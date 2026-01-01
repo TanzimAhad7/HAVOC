@@ -42,7 +42,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from tqdm import trange
-
+from model import HAVOCModelLoader
 
 import numpy as np
 import torch
@@ -194,11 +194,12 @@ class SafeRewriterLLM:
 
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype).to(self.device).eval()
+        self.tokenizer, self.model = HAVOCModelLoader(model_name=model_name, device_map=self.device).load() #AutoTokenizer.from_pretrained(model_name, use_fast=False)
+        self.model = self.model.to(self.device, dtype=dtype)
+        # self.model = #AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype).to(self.device).eval()
 
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        # if self.tokenizer.pad_token_id is None:
+        #     self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
         self.bias_strength = float(bias_strength)
 
