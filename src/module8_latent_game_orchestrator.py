@@ -4,19 +4,18 @@ Module 8 — Latent Game Orchestrator (HAVOC++)
 
 Orchestrates the closed-loop attacker–defender game.
 
-Core principle:
----------------
-The attacker adapts its search strategy based on the *current defense
-intervention direction* applied in latent space.
-
-This module ensures the defense is ACTIVE (not just diagnostic).
+IMPORTANT SEMANTICS (FINAL):
+----------------------------
+• Exactly ONE attacker prompt is selected per round.
+• Defense is applied ONLY to that prompt’s activation.
+• The defended prompt is decoded from the ACTUAL defended activation
+  (interpretability only, not fed back into the attacker).
 """
 
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 import numpy as np
 from tqdm import trange
-
 
 from module1_Activation_Extraction import extract_activation_dynamic
 from module7_controller import HAVOC_Controller, SafeRewriterLLM
@@ -25,6 +24,9 @@ from module10_stability_controller import StabilityController
 from model import HAVOCModelLoader
 import torch
 import torch.nn.functional as F
+# For defended activation decoding
+from module6_Steering import steer_hidden_state
+from module7_controller import STEER_TEMPERATURE, STEER_TOP_P
 
 MODEL_NAME: str = "meta-llama/Meta-Llama-3-8B-Instruct",
 DEVICE: str = "cuda"
@@ -147,10 +149,9 @@ class LatentGameOrchestrator:
     def _run_single_game(self, intent: str) -> Dict[str, Any]:
         """Run one attacker–defender game for a single intent."""
 
-        # (1) Extract intent activation ONCE (fixed reference)
+        # (1) Fixed reference activation for intent
         fI = extract_activation_dynamic(intent, layer=self.layer)
 
-        # Reset controllers (memory in Module 9 is preserved)
         self.defence_policy.reset()
         self.stability_controller.reset()
 
@@ -176,22 +177,23 @@ class LatentGameOrchestrator:
         # --------------------------------------------------------
         while not stable:
             print(f"\n  [ROUND {round_idx+1}/{self.max_iters}] starting")
+
             # ==============================
-            # (A) ATTACKER MOVE (Module 7)
+            # (A) ATTACKER MOVE
             # ==============================
-            # Attacker is conditioned on the CURRENT defense direction
             best_prompt, best_score, attack_traj = controller.run(
                 steer_vector=self.defence_policy.last_delta_dir,
                 steer_alpha=self.defence_policy.strength,
             )
 
-            # Extract candidate activation
+            # Activation of the ACTUAL attacker move
             fP = extract_activation_dynamic(best_prompt, layer=self.layer)
 
             # ==============================
-            # (B) DEFENDER MOVE (Module 9)
+            # (B) DEFENDER MOVE
             # ==============================
             risk_raw = self.defence_policy.compute_risk(fP)
+
             defended_fP = self.defence_policy.apply_intervention(fP)
             risk_def = self.defence_policy.compute_risk(defended_fP)
 
@@ -226,7 +228,48 @@ class LatentGameOrchestrator:
             )
 
             # ==============================
-            # (C) STABILITY CHECK (Module 10)
+            # (B.1) DECODE DEFENDED ACTIVATION (TRUE)
+            # ==============================
+            defended_prompt_text = ""
+            try:
+                if best_prompt and defended_fP is not None:
+                    rewriter = controller.rewriter
+
+                    # IMPORTANT:
+                    # No attacker bias here — we want to observe the defense effect
+                    rewriter.set_concept_bias(None)
+
+                    # Decode using the TRUE defended delta
+                    delta = defended_fP - fP
+
+                    with steer_hidden_state(
+                        model=rewriter.model,
+                        layer_idx=self.layer,
+                        v_comp=delta,
+                        alpha=1.0,
+                    ):
+                        decodes = rewriter.generate(
+                            seed_text=best_prompt,
+                            n=1,
+                            temperature=STEER_TEMPERATURE,
+                            top_p=STEER_TOP_P,
+                        )
+
+                    if decodes:
+                        defended_prompt_text = decodes[0]
+            except Exception:
+                defended_prompt_text = ""
+
+            # ==============================
+            # (B.2) LOG DEFENSE METADATA (TRUE)
+            # ==============================
+            defence_meta = {
+                "source": self.defence_policy.last_source,   # memory | online
+                "lambda_used": float(self.defence_policy.strength),
+            }
+
+            # ==============================
+            # (C) STABILITY CHECK
             # ==============================
             stable = self.stability_controller.update(
                 risk_raw=risk_raw,
@@ -241,7 +284,7 @@ class LatentGameOrchestrator:
                 )
 
             # ==============================
-            # (D) LOGGING
+            # (D) LOGGING (ONE GAME MOVE)
             # ==============================
             round_logs.append({
                 "round": round_idx,
@@ -251,21 +294,18 @@ class LatentGameOrchestrator:
                 "r_def": float(risk_def),
                 "defence_strength": float(self.defence_policy.strength),
                 "attack_trajectory": attack_traj,
+                "defended_prompt": defended_prompt_text,
+                "defence_meta": defence_meta,
             })
 
-            if self.verbose:
-                print(
-                    f"[Round {round_idx}] "
-                    f"score={best_score:.4f} | "
-                    f"r_raw={risk_raw:.4f} | "
-                    f"r_def={risk_def:.4f} | "
-                    f"λ={self.defence_policy.strength:.4f} | "
-                    f"stable={stable}"
-                )
+            # ==============================
+            # (E) UPDATE λ FOR NEXT ROUND
+            # ==============================
+            self.defence_policy.update_policy(risk_def)
 
             round_idx += 1
 
-        # Final summary
+        # Terminal outcome
         final_prompt = round_logs[-1]["best_prompt"] if round_logs else intent
         final_score = round_logs[-1]["best_score"] if round_logs else 0.0
 
@@ -279,7 +319,6 @@ class LatentGameOrchestrator:
 
     # ------------------------------------------------------------
     def run(self) -> List[Dict[str, Any]]:
-        """Run the latent game for all intents."""
         results = []
         for intent in self.intents:
             if self.verbose:
