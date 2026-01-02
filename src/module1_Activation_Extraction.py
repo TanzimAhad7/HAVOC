@@ -31,7 +31,7 @@ import random
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
 
 # ============================================================
 #  GPU CHECK — Ensure we are actually using CUDA/H100

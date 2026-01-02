@@ -25,8 +25,9 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from umap import UMAP
+from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+# PARENT_PATH = "HAVOC"
 # ============================================================
 # PATHS
 # ============================================================

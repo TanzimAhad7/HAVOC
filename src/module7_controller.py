@@ -47,12 +47,13 @@ from model import HAVOCModelLoader
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, LogitsProcessor
-
+from module1_Activation_Extraction import PARENT_PATH
 from module3_optimus_V_scoring import optimusV
 from module5_concept_fuzzing import fuzz_sample
 from module6_Steering import steer_hidden_state
+from module3_optimus_V_scoring import extract_activation as _extract_act_m3
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+# PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
 
 # ============================================================
 # (A) ATTACKER MODE (EVALUATION CONTROL)
@@ -195,8 +196,11 @@ class SafeRewriterLLM:
 
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
-        self.tokenizer, self.model = HAVOCModelLoader(model_name=model_name, device_map=self.device).load() #AutoTokenizer.from_pretrained(model_name, use_fast=False)
-        self.model = self.model.to(self.device, dtype=dtype)
+        habocLoader = HAVOCModelLoader(model_name=model_name)
+        self.tokenizer = habocLoader.load_tokenizer()
+        self.model = habocLoader.load_model()
+         #AutoTokenizer.from_pretrained(model_name, use_fast=False)
+        # self.model = self.model.to(self.device, dtype=dtype)
         # self.model = #AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype).to(self.device).eval()
 
         # if self.tokenizer.pad_token_id is None:
@@ -238,11 +242,11 @@ class SafeRewriterLLM:
 
         concept_t = torch.tensor(
             v,
-            device=self.model.model.embed_tokens.weight.device,
-            dtype=self.model.model.embed_tokens.weight.dtype,
+            device=self.model.device,
+            dtype=self.model.dtype,
         )
 
-        emb = self.model.model.embed_tokens.weight.detach()  # (vocab, hidden)
+        emb = self.model.model.embed_tokens.weight.detach()
         bias = (emb @ concept_t).to(torch.float32)          # (vocab,)
 
         self._bias_processor = SafeRewriterLLM._ConceptBiasProcessor(bias, self.bias_strength)
@@ -364,7 +368,6 @@ class HAVOC_Controller:
         # self.v_jb_proj = self._project_concept(self.v_jb)
 
         # Cache intent activation once for Optimus-V (Module 3 supports fI_cached)
-        from module3_optimus_V_scoring import extract_activation as _extract_act_m3
         self.fI_cached = _extract_act_m3(self.intent, layer=self.layer)
 
         # Generator

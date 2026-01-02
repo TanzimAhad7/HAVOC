@@ -17,7 +17,7 @@ from typing import List, Dict, Any, Optional
 import numpy as np
 from tqdm import trange
 
-from module1_Activation_Extraction import extract_activation_dynamic
+from module1_Activation_Extraction import extract_activation_dynamic, PARENT_PATH
 from module7_controller import HAVOC_Controller, SafeRewriterLLM
 from module9_adaptive_defense_policy import AdaptiveDefensePolicy
 from module10_stability_controller import StabilityController
@@ -27,8 +27,9 @@ import torch.nn.functional as F
 # For defended activation decoding
 from module6_Steering import steer_hidden_state
 from module7_controller import STEER_TEMPERATURE, STEER_TOP_P
+from safe_decoding import SafeDecodingHAVOC, SafeDecodingConfig
 
-MODEL_NAME: str = "meta-llama/Meta-Llama-3-8B-Instruct",
+MODEL_NAME: str = "meta-llama/Meta-Llama-3-8B-Instruct"
 DEVICE: str = "cuda"
 MAX_NEW_TOKENS = 128  # example
 
@@ -62,7 +63,116 @@ class LatentGameOrchestrator:
         self.seed = int(attacker_seed)
         self.verbose = bool(verbose)
         self.combined_risk = False  # Whether to combine risks
-        self.model, self.tokenizer = HAVOCModelLoader(MODEL_NAME, DEVICE).load()  # To be set if needed
+
+        habocLoader = HAVOCModelLoader(model_name=MODEL_NAME)
+        self.tokenizer = habocLoader.load_tokenizer()
+        self.model = habocLoader.load_model()
+
+    # --------------------------------------------------
+    @staticmethod
+    def _l2_normalize(x: np.ndarray, eps: float = 1e-9) -> np.ndarray:
+        return x / (np.linalg.norm(x) + eps)
+    
+    def steer_latent_safe(self, fP: np.ndarray, alpha: float, beta: float):
+
+        fP_u = self._l2_normalize(fP)
+
+        if self.W is not None and self.mu_HJ is not None:
+            fP_s = self._l2_normalize(self.W @ (fP_u - self.mu_HJ))
+            vD_s = self._l2_normalize(self.W @ self.v_direct)
+            vJ_s = self._l2_normalize(self.W @ self.v_jb)
+        elif self.W is not None:
+            fP_s = self._l2_normalize(self.W @ fP_u)
+            vD_s = self._l2_normalize(self.W @ self.v_direct)
+            vJ_s = self._l2_normalize(self.W @ self.v_jb)
+        else:
+            fP_s = fP_u
+            vD_s = self._l2_normalize(self.v_direct)
+            vJ_s = self._l2_normalize(self.v_jb)
+
+        r_harm = float(np.clip(np.dot(fP_s, vD_s), 0.0, 1.0))
+        r_jb   = float(np.clip(np.dot(fP_s, vJ_s), 0.0, 1.0))
+
+        fP_safe = (
+            fP_s
+            - alpha * r_jb * vJ_s
+            - beta * r_harm * vD_s
+        )
+
+        fP_safe = self._l2_normalize(fP_safe)
+
+        # 🔴 back-project to model space if needed
+        if self.W is not None:
+            fP_safe = np.linalg.pinv(self.W) @ fP_safe
+
+        return fP_safe
+
+    
+
+    def make_steering_hook(self, fP_safe: torch.Tensor):
+
+        def hook(module, inputs, output):
+            if not isinstance(output, torch.Tensor):
+                return output
+
+            fP_safe_local = fP_safe.to(output.device).to(output.dtype)
+
+            blend = 0.5
+            output[:, -1, :] = (
+                (1 - blend) * output[:, -1, :] + blend * fP_safe_local
+            )
+
+            return output
+
+        return hook
+    
+
+    @torch.no_grad()
+    def generate_with_latent_steering(self,
+        prompt: str,
+        fP_safe: torch.Tensor,
+        max_new_tokens: int = 200,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+    ):
+        """
+        Generate text by injecting fP_safe into the model.
+        """
+
+        # --------------------
+        # Tokenize
+        # --------------------
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(DEVICE)
+
+        # --------------------
+        # Register hook
+        # --------------------
+        hook_handle = self.model.model.layers[self.layer].register_forward_hook(
+            self.make_steering_hook(fP_safe)
+        )
+
+        # --------------------
+        # Generate
+        # --------------------
+        output_ids = self.model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temperature,
+            top_p=top_p,
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+
+        # --------------------
+        # Remove hook (CRITICAL)
+        # --------------------
+        hook_handle.remove()
+
+        # --------------------
+        # Decode
+        # --------------------
+        return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
 
     # ======================================================
     # 2. SafeDecoding (logit-level intervention)
@@ -218,16 +328,40 @@ class LatentGameOrchestrator:
                 self.defence_policy.update_policy(risk_def)
 
             ## Apply SafeDecoding adjustment to logits
-            safe_text = self.generate_safe_response(
-                prompt=best_prompt,
-                v_direct=self.v_direct,
-                strength=self.defence_policy.strength,
-                risk = risk_def,
-                layer=self.layer,
-                max_new_tokens=64,
-                device=DEVICE,
+            # safe_response1 = self.generate_safe_response(
+            #     prompt=best_prompt,
+            #     v_direct=self.v_direct,
+            #     strength=self.defence_policy.strength,
+            #     risk = risk_def,
+            #     layer=self.layer,
+            #     max_new_tokens=64,
+            #     device=DEVICE,
+            # )
+            # print("SAFE RESPONSE1:\n", safe_response1)
+
+            # cfg = SafeDecodingConfig(alpha=1.2, first_m=8, top_k=20, do_sample=False)
+            # sd = SafeDecodingHAVOC(self.model, self.tokenizer, cfg=cfg, verbose=True)
+
+            # inputs = self.tokenizer(best_prompt, return_tensors="pt")
+            # safe_response1, n = sd.generate(inputs, risk=risk_def, r_harm=r_harm, r_jb=r_jb)
+
+            # print("SAFE RESPONSE1:\n", safe_response1)
+
+
+            fP_safe = self.steer_latent_safe(
+                fP=fP,
+                alpha=0.8,
+                beta=0.6,
             )
-            print("SAFE RESPONSE:\n", safe_text)
+
+            safe_response2 = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
+                max_new_tokens=128,
+                temperature=STEER_TEMPERATURE)
+            
+            print("BEST PROMPT:\n", best_prompt)
+            print("\n-------------------------------------------------\n")
+            print("SAFE RESPONSE2:\n", safe_response2)
+            print("\n-------------------------------------------------\n")
 
             print(
                 f"  [ROUND {round_idx+1}] "

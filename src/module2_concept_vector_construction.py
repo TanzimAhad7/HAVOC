@@ -23,8 +23,9 @@ centroids and concept vectors without duplicating path logic.
 
 import os
 import numpy as np
+from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+# PARENT_PATH = "HAVOC"
 
 # ============================================================
 #  PATHS (match Module 1 outputs)

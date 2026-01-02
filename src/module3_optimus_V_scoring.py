@@ -20,6 +20,7 @@ IMPORTANT:
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from module1_Activation_Extraction import PARENT_PATH
 
 __all__ = ["optimusV", "extract_activation", "optimusV_from_activations"]
 

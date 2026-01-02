@@ -15,8 +15,9 @@ import os
 import numpy as np
 import torch
 from contextlib import contextmanager
+from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+# PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
 
 __all__ = ["refine_vectors", "steer_in_direct_space", "steer_hidden_state"]
 

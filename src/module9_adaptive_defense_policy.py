@@ -55,6 +55,7 @@ So it is NOT 4 MB fixed. It scales with (capacity * hidden_dim).
 from __future__ import annotations
 from typing import Optional, List, Tuple
 import numpy as np
+from module1_Activation_Extraction import PARENT_PATH
 
 class AdaptiveDefensePolicy:
     """

@@ -24,11 +24,12 @@ from module4_direct_representaiton_space import load_direct_space
 from module8_latent_game_orchestrator import LatentGameOrchestrator
 from module9_adaptive_defense_policy import AdaptiveDefensePolicy
 from module10_stability_controller import StabilityController
+from module1_Activation_Extraction import PARENT_PATH
 
 # Disable gradients globally (pure inference / control loop)
 torch.set_grad_enabled(False)
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC/dataset/"
+# PARENT_PATH = "HAVOC"
 
 # ============================================================
 # CONFIG
@@ -243,11 +244,7 @@ def main() -> None:
 
     print("\n[OK] HAVOC++ evaluation complete.")
 
-
 if __name__ == "__main__":
     main()
 
-
-
-
-#CUDA_VISIBLE_DEVICES=2 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all.log  2>&1 &
+#CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all.log  2>&1 &

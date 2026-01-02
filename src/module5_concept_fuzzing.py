@@ -18,8 +18,9 @@ random candidate directions.  It provides two entry points:
 import os
 import numpy as np
 import random
+from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+# PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
 
 __all__ = ["fuzz_sample", "main"]
 
