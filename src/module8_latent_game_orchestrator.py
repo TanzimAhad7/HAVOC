@@ -395,7 +395,7 @@ class LatentGameOrchestrator:
             safe_response1 = safe_response_wo_feedback[len(best_prompt):]
             print("BEST PROMPT:\n", best_prompt)
             print("\n-------------------------------------------------\n")
-            print("SAFE RESPONSE1:\n", safe_response1)
+            print("SAFE RESPONSE without feedback:\n", safe_response1)
             print("\n-------------------------------------------------\n")
 
             # --------------------------------------------------------
@@ -415,7 +415,7 @@ class LatentGameOrchestrator:
             safe_response2 = safe_response_w_feedback[len(best_prompt):]
             # print("BEST PROMPT:\n", best_prompt)
             print("\n-------------------------------------------------\n")
-            print("SAFE RESPONSE2:\n", safe_response2)
+            print("SAFE RESPONSE with feedback:\n", safe_response2)
             print("\n-------------------------------------------------\n")
 
             response_meta = self.analyze_safe_response(best_prompt, safe_response2)
