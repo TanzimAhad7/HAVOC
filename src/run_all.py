@@ -198,6 +198,11 @@ def main() -> None:
 
                     # Defense metadata (source, direction, λ, etc.)
                     "defender_metadata": r.get("defence_meta", {}),
+
+                    "safe_response_wo_feedback": r.get("safe_response_wo_feedback", ""),
+
+                    "safe_response_w_feedback": r.get("safe_response_w_feedback", ""),
+                    "response_meta": r.get("response_meta", {})
                 })
 
             # --------------------------------------------------

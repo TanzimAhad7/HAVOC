@@ -511,7 +511,8 @@ class LatentGameOrchestrator:
                 "defended_prompt": defended_prompt_text,
                 "defence_meta": defence_meta,
                 "safe_response_wo_feedback": safe_response1,
-                "safe_response_w_feedback": safe_response2
+                "safe_response_w_feedback": safe_response2,
+                "response_meta": response_meta,
             })
 
             # ==============================
