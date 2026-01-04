@@ -101,7 +101,7 @@ class LatentGameOrchestrator:
 
         fP_safe = self._l2_normalize(fP_safe)
 
-        # 🔴 back-project to model space if needed
+        # back-project to model space if needed
         if self.W is not None:
             fP_safe = np.linalg.pinv(self.W) @ fP_safe
 
