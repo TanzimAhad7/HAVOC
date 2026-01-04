@@ -31,7 +31,7 @@ from safe_decoding import SafeDecodingHAVOC, SafeDecodingConfig
 
 MODEL_NAME: str = "meta-llama/Meta-Llama-3-8B-Instruct"
 DEVICE: str = "cuda"
-MAX_NEW_TOKENS = 128  # example
+MAX_NEW_TOKENS = 256  # example
 
 class LatentGameOrchestrator:
     """Run the HAVOC++ attacker–defender game."""
@@ -388,31 +388,37 @@ class LatentGameOrchestrator:
                 beta=beta,
             )
 
-            # safe_response2 = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
-            #     max_new_tokens=128,
-            #     temperature=STEER_TEMPERATURE)
+            safe_response_wo_feedback = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
+                max_new_tokens=MAX_NEW_TOKENS,
+                temperature=STEER_TEMPERATURE)
+            
+            safe_response1 = safe_response_wo_feedback[len(best_prompt):]
+            print("BEST PROMPT:\n", best_prompt)
+            print("\n-------------------------------------------------\n")
+            print("SAFE RESPONSE2:\n", safe_response1)
+            print("\n-------------------------------------------------\n")
 
-            # ------------------------------
-            # Response bandwidth clamp
-            # ------------------------------
+            # --------------------------------------------------------
+            # Response Generation having previous safe response effect
+            # --------------------------------------------------------
             effective_max_tokens = int(
                 MAX_NEW_TOKENS * self.defence_policy.response_bandwidth
             )
             effective_max_tokens = max(16, effective_max_tokens)  # safety floor
 
-            safe_response2 = self.generate_with_latent_steering(
+            safe_response_w_feedback = self.generate_with_latent_steering(
                 best_prompt,
                 fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
                 max_new_tokens=effective_max_tokens,
                 temperature=STEER_TEMPERATURE
             )
-            response = safe_response2[len(best_prompt):]
-            print("BEST PROMPT:\n", best_prompt)
+            safe_response2 = safe_response_w_feedback[len(best_prompt):]
+            # print("BEST PROMPT:\n", best_prompt)
             print("\n-------------------------------------------------\n")
-            print("SAFE RESPONSE2:\n", response)
+            print("SAFE RESPONSE1:\n", safe_response2)
             print("\n-------------------------------------------------\n")
 
-            response_meta = self.analyze_safe_response(best_prompt, response)
+            response_meta = self.analyze_safe_response(best_prompt, safe_response2)
             print("SAFE RESPONSE META:", response_meta)
 
             # Detect attacker learning signals
@@ -504,6 +510,8 @@ class LatentGameOrchestrator:
                 "attack_trajectory": attack_traj,
                 "defended_prompt": defended_prompt_text,
                 "defence_meta": defence_meta,
+                "safe_response_wo_feedback": safe_response1,
+                "safe_response_w_feedback": safe_response2
             })
 
             # ==============================
