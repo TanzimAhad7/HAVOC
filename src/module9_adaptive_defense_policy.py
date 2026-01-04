@@ -153,6 +153,14 @@ class AdaptiveDefensePolicy:
         # Module 8 for usage.
         self.last_source: Optional[str] = None
 
+         # =========================================================
+        # (D) Meta-defense against adaptive black-box attackers
+        # =========================================================
+        self.strict_mode: bool = False          # harden latent steering
+        self.response_bandwidth: float = 1.0   # <1 → shorter / flatter responses
+        self.momentum: float = 0.0              # accelerates λ updates (future rounds)
+        self.momentum_max: float = 1.0
+
         self.reset()
 
     # --------------------------------------------------
@@ -346,6 +354,64 @@ class AdaptiveDefensePolicy:
         self.last_source = source
 
         return vec
+    
+        # --------------------------------------------------
+    def enable_strict_mode(self) -> None:
+        """
+        Enable strict defense mode when attacker appears to
+        infer boundaries from safe responses.
+
+        Effects (future rounds only):
+        - increases baseline λ
+        - biases updates to escalate faster
+        """
+        if not self.strict_mode:
+            self.strict_mode = True
+
+            # Small one-time bump (bounded)
+            self.strength = min(
+                self.strength * 1.25,
+                self.strength_max
+            )
+
+            self.last_source = "strict_mode"
+
+    # --------------------------------------------------
+    def reduce_response_bandwidth(self) -> None:
+        """
+        Clamp future response expressiveness.
+
+        Used to kill:
+        - pattern mining
+        - embedding-based learning
+        - LLM critique signals
+
+        NOTE:
+        This does NOT change risk or latent steering directly.
+        """
+        # Multiplicative decay with floor
+        self.response_bandwidth = max(
+            0.4,
+            self.response_bandwidth * 0.7
+        )
+
+        self.last_source = "bandwidth_clamp"
+
+    # --------------------------------------------------
+    def increase_momentum(self) -> None:
+        """
+        Accelerate future λ adaptation when partial compliance
+        is detected (attacker learning signal).
+
+        Momentum amplifies *future* risk deltas only.
+        """
+        self.momentum = min(
+            self.momentum + 0.15,
+            self.momentum_max
+        )
+
+        self.last_source = "momentum"
+
 
     # --------------------------------------------------
     def update_policy(self, risk_now: float) -> None:
@@ -387,12 +453,17 @@ class AdaptiveDefensePolicy:
 
         # ---- Step 4: deadband ----
         if abs(delta) > self.deadband:
+            # Momentum-aware amplification
+            gain = 1.0 + self.momentum
+
+            # Strict mode escalates faster
+            if self.strict_mode:
+                gain *= 1.2
+
             if delta > 0.0:
-                # risk increased -> attacker making progress -> strengthen defense
-                self.strength *= self.adapt_up
+                self.strength *= (self.adapt_up ** gain)
             else:
-                # risk decreased -> defense working -> relax a bit (avoid over-perturbing)
-                self.strength *= self.adapt_down
+                self.strength *= (self.adapt_down ** gain)
 
         # ---- Step 5: saturation bounds ----
         self.strength = float(np.clip(self.strength, self.strength_min, self.strength_max))

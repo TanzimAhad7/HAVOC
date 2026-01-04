@@ -107,8 +107,6 @@ class LatentGameOrchestrator:
 
         return fP_safe
 
-    
-
     def make_steering_hook(self, fP_safe: torch.Tensor):
 
         def hook(module, inputs, output):
@@ -172,6 +170,33 @@ class LatentGameOrchestrator:
         # Decode
         # --------------------
         return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
+    def analyze_safe_response(self, prompt: str, response: str) -> Dict[str, float]:
+        """
+        Extract non-invertible meta-signals from the safe response.
+        """
+        is_refusal = any(
+            k in response.lower()
+            for k in ["can't help", "not able", "cannot assist", "unable to"]
+        )
+
+        length = len(response.split())
+        length_bucket = (
+            0 if length < 20 else
+            1 if length < 60 else
+            2
+        )
+
+        # Optional: embedding distance (coarse)
+        fP_prompt = extract_activation_dynamic(prompt, layer=self.layer)
+        fP_resp   = extract_activation_dynamic(response, layer=self.layer)
+        semantic_shift = float(1 - np.dot(fP_prompt, fP_resp))
+
+        return {
+            "is_refusal": float(is_refusal),
+            "length_bucket": length_bucket,
+            "semantic_shift": semantic_shift,
+        }
 
 
     # ======================================================
@@ -264,6 +289,7 @@ class LatentGameOrchestrator:
 
         return safe_response
     # ------------------------------------------------------------
+
     def _run_single_game(self, intent: str) -> Dict[str, Any]:
         """Run one attacker–defender game for a single intent."""
 
@@ -347,21 +373,60 @@ class LatentGameOrchestrator:
 
             # print("SAFE RESPONSE1:\n", safe_response1)
 
+            # ------------------------------
+            # Strict-mode steering escalation
+            # ------------------------------
+            base_alpha = 0.8
+            base_beta  = 0.6
+
+            alpha = base_alpha * (1.3 if self.defence_policy.strict_mode else 1.0)
+            beta  = base_beta  * (1.3 if self.defence_policy.strict_mode else 1.0)
 
             fP_safe = self.steer_latent_safe(
                 fP=fP,
-                alpha=0.8,
-                beta=0.6,
+                alpha=alpha,
+                beta=beta,
             )
 
-            safe_response2 = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
-                max_new_tokens=128,
-                temperature=STEER_TEMPERATURE)
-            
+            # safe_response2 = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
+            #     max_new_tokens=128,
+            #     temperature=STEER_TEMPERATURE)
+
+            # ------------------------------
+            # Response bandwidth clamp
+            # ------------------------------
+            effective_max_tokens = int(
+                MAX_NEW_TOKENS * self.defence_policy.response_bandwidth
+            )
+            effective_max_tokens = max(16, effective_max_tokens)  # safety floor
+
+            safe_response2 = self.generate_with_latent_steering(
+                best_prompt,
+                fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
+                max_new_tokens=effective_max_tokens,
+                temperature=STEER_TEMPERATURE
+            )
+            response = safe_response2[len(best_prompt):]
             print("BEST PROMPT:\n", best_prompt)
             print("\n-------------------------------------------------\n")
-            print("SAFE RESPONSE2:\n", safe_response2)
+            print("SAFE RESPONSE2:\n", response)
             print("\n-------------------------------------------------\n")
+
+            response_meta = self.analyze_safe_response(best_prompt, response)
+            print("SAFE RESPONSE META:", response_meta)
+
+            # Detect attacker learning signals
+            if response_meta["semantic_shift"] < 0.2:
+                # Response too close to prompt → reduce informative leakage
+                self.defence_policy.enable_strict_mode()
+
+            if response_meta["length_bucket"] > 1:
+                # Response too verbose → clamp future decoding
+                self.defence_policy.reduce_response_bandwidth()
+
+            if response_meta["is_refusal"] == 0:
+                # Partial compliance detected → escalate faster
+                self.defence_policy.increase_momentum()
 
             print(
                 f"  [ROUND {round_idx+1}] "
