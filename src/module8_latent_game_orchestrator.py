@@ -388,14 +388,14 @@ class LatentGameOrchestrator:
                 beta=beta,
             )
 
-            safe_response_wo_feedback = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
+            safe_response_no_feedback_to_defender = self.generate_with_latent_steering(best_prompt, fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
                 max_new_tokens=MAX_NEW_TOKENS,
                 temperature=STEER_TEMPERATURE)
             
-            safe_response1 = safe_response_wo_feedback[len(best_prompt):]
+            safe_response1 = safe_response_no_feedback_to_defender[len(best_prompt):]
             print("BEST PROMPT:\n", best_prompt)
             print("\n-------------------------------------------------\n")
-            print("SAFE RESPONSE without feedback:\n", safe_response1)
+            print("SAFE RESPONSE no feedback to defender:\n", safe_response1)
             print("\n-------------------------------------------------\n")
 
             # --------------------------------------------------------
@@ -406,16 +406,16 @@ class LatentGameOrchestrator:
             )
             effective_max_tokens = max(16, effective_max_tokens)  # safety floor
 
-            safe_response_w_feedback = self.generate_with_latent_steering(
+            safe_response_as_feedback_to_defender = self.generate_with_latent_steering(
                 best_prompt,
                 fP_safe=torch.tensor(fP_safe, device=DEVICE, dtype=torch.float32),
                 max_new_tokens=effective_max_tokens,
                 temperature=STEER_TEMPERATURE
             )
-            safe_response2 = safe_response_w_feedback[len(best_prompt):]
+            safe_response2 = safe_response_as_feedback_to_defender[len(best_prompt):]
             # print("BEST PROMPT:\n", best_prompt)
             print("\n-------------------------------------------------\n")
-            print("SAFE RESPONSE with feedback:\n", safe_response2)
+            print("SAFE RESPONSE as feedback to defender:\n", safe_response2)
             print("\n-------------------------------------------------\n")
 
             response_meta = self.analyze_safe_response(best_prompt, safe_response2)
@@ -510,8 +510,8 @@ class LatentGameOrchestrator:
                 "attack_trajectory": attack_traj,
                 "defended_prompt": defended_prompt_text,
                 "defence_meta": defence_meta,
-                "safe_response_wo_feedback": safe_response1,
-                "safe_response_w_feedback": safe_response2,
+                "safe_response_no_feedback_to_defender": safe_response1,
+                "safe_response_as_feedback_to_defender": safe_response2,
                 "response_meta": response_meta,
             })
 

@@ -412,7 +412,6 @@ class AdaptiveDefensePolicy:
 
         self.last_source = "momentum"
 
-
     # --------------------------------------------------
     def update_policy(self, risk_now: float) -> None:
         """
