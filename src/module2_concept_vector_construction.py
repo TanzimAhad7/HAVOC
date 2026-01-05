@@ -25,7 +25,7 @@ import os
 import numpy as np
 from module1_Activation_Extraction import PARENT_PATH
 
-# PARENT_PATH = "HAVOC"
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
 
 # ============================================================
 #  PATHS (match Module 1 outputs)
@@ -127,4 +127,4 @@ def load_concepts(layer: int = LAYER, concept_dir: str = OUT_DIR):
 if __name__ == "__main__":
     run_concept_construction(LAYER)
 
-# CUDA_VISIBLE_DEVICES=3 nohup python module2_concept_vector_construction.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python module2_concept_vector_construction.py > /home/tahad/HAVOC/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &

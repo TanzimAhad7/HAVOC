@@ -67,8 +67,20 @@ class LatentGameOrchestrator:
         habocLoader = HAVOCModelLoader(model_name=MODEL_NAME)
         self.tokenizer = habocLoader.load_tokenizer()
         self.model = habocLoader.load_model()
+        # ======================================================
+        # PATCH 2: Response → Attacker feedback projection
+        # ======================================================
+        # Fixed random projection: response meta → latent direction
+        # Non-invertible, attacker-safe
+        self.RESPONSE_FEEDBACK_PROJ = np.random.normal(
+            0, 1, size=(self.v_direct.shape[0], 3)
+        ).astype(np.float32)
 
-    # --------------------------------------------------
+        self.RESPONSE_FEEDBACK_PROJ /= (
+            np.linalg.norm(self.RESPONSE_FEEDBACK_PROJ, axis=0, keepdims=True) + 1e-9
+        )
+
+
     @staticmethod
     def _l2_normalize(x: np.ndarray, eps: float = 1e-9) -> np.ndarray:
         return x / (np.linalg.norm(x) + eps)
@@ -101,7 +113,7 @@ class LatentGameOrchestrator:
 
         fP_safe = self._l2_normalize(fP_safe)
 
-        # 🔴 back-project to model space if needed
+        # back-project to model space if needed
         if self.W is not None:
             fP_safe = np.linalg.pinv(self.W) @ fP_safe
 
@@ -325,8 +337,17 @@ class LatentGameOrchestrator:
             # ==============================
             # (A) ATTACKER MOVE
             # ==============================
+            # ======================================================
+            # PATCH 2: Combined defender + response steering
+            # ======================================================
+            combined_steer = self.defence_policy.last_delta_dir
+
+            if combined_steer is not None:
+                combined_steer = combined_steer + 0.3 * response_dir
+                combined_steer = combined_steer / (np.linalg.norm(combined_steer) + 1e-9)
+
             best_prompt, best_score, attack_traj = controller.run(
-                steer_vector=self.defence_policy.last_delta_dir,
+                steer_vector=combined_steer,
                 steer_alpha=self.defence_policy.strength,
             )
 
@@ -420,6 +441,22 @@ class LatentGameOrchestrator:
 
             response_meta = self.analyze_safe_response(best_prompt, safe_response2)
             print("SAFE RESPONSE META:", response_meta)
+
+            # ======================================================
+            # PATCH 2: Build response feedback direction
+            # ======================================================
+            response_vec = np.array(
+                [
+                    response_meta["is_refusal"],                # binary
+                    response_meta["length_bucket"] / 2.0,       # normalize {0,1,2} → [0,1]
+                    min(response_meta["semantic_shift"], 1.0),  # clamp
+                ],
+                dtype=np.float32,
+            )
+
+            # Project response behavior into latent space
+            response_dir = self.RESPONSE_FEEDBACK_PROJ @ response_vec
+            response_dir = response_dir / (np.linalg.norm(response_dir) + 1e-9)
 
             # Detect attacker learning signals
             if response_meta["semantic_shift"] < 0.2:

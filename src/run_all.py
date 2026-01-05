@@ -29,7 +29,7 @@ from module1_Activation_Extraction import PARENT_PATH
 # Disable gradients globally (pure inference / control loop)
 torch.set_grad_enabled(False)
 
-# PARENT_PATH = "HAVOC"
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
 
 # ============================================================
 # CONFIG
@@ -252,4 +252,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-#CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all.log  2>&1 &
+#CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all.log  2>&1 &

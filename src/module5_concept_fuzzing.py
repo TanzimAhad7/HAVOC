@@ -20,7 +20,7 @@ import numpy as np
 import random
 from module1_Activation_Extraction import PARENT_PATH
 
-# PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
+PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
 
 __all__ = ["fuzz_sample", "main"]
 
