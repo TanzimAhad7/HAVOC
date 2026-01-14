@@ -45,7 +45,6 @@ EXPECTED BEHAVIOR
 - Convergence rate lower than adaptive defense
 """
 
-
 import json
 import os
 from tqdm import tqdm

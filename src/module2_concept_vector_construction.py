@@ -25,8 +25,6 @@ import os
 import numpy as np
 from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
-
 # ============================================================
 #  PATHS (match Module 1 outputs)
 # ============================================================

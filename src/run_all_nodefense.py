@@ -23,7 +23,7 @@ Correct order:
 
 INPUTS
 ------
-- evaluation_intents.json
+- advbench_eval.json
 - same latent geometry
 
 OUTPUT

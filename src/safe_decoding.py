@@ -180,7 +180,7 @@ class SafeDecodingHAVOC:
             gen_config = copy.deepcopy(self.model.generation_config)
 
         # Save originals
-        max_new_tokens = int(getattr(gen_config, "max_new_tokens", 64))
+        max_new_tokens = 64 #int(getattr(gen_config, "max_new_tokens", 64))
         orig_do_sample = bool(getattr(gen_config, "do_sample", False))
 
         input_ids = inputs["input_ids"]

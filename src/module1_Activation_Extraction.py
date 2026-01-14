@@ -31,7 +31,7 @@ import random
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
+PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
 
 # ============================================================
 #  GPU CHECK — Ensure we are actually using CUDA/H100
@@ -123,7 +123,7 @@ composed_prompts = pick_anchors(composed_prompts, "composed")
 # ============================================================
 #  LOAD LLaMA‑3 8B INSTRUCT MODEL
 # ============================================================
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+model_name = "mistralai/Mistral-7B-Instruct-v0.3" #"meta-llama/Meta-Llama-3-8B-Instruct"
 
 # Load tokenizer and model once to reuse for both static and dynamic extractions
 tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)

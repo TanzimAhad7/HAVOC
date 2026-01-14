@@ -29,8 +29,6 @@ from module1_Activation_Extraction import PARENT_PATH
 # Disable gradients globally (pure inference / control loop)
 torch.set_grad_enabled(False)
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
-
 # ============================================================
 # CONFIG
 # ============================================================
@@ -194,15 +192,15 @@ def main() -> None:
                     "attacker_search_trace": attacker_trace,
 
                     # Decoded defended text (interpretability only)
-                    "decoded_defended_prompt": r.get("defended_prompt", ""),
+                    "decoded_defended_response": r.get("defended_response", ""),
 
                     # Defense metadata (source, direction, λ, etc.)
                     "defender_metadata": r.get("defence_meta", {}),
 
-                    "safe_response_wo_feedback": r.get("safe_response_wo_feedback", ""),
-
-                    "safe_response_w_feedback": r.get("safe_response_w_feedback", ""),
-                    "response_meta": r.get("response_meta", {})
+                    "safe_response_no_feedback_to_defender": r.get("safe_response_no_feedback_to_defender", ""),
+                    "safe_response_as_feedback_to_defender": r.get("safe_response_as_feedback_to_defender", ""),
+                    "response_meta": r.get("response_meta", {}),
+                    "safeDecoding_response": r.get("safeDecoding_response", "")
                 })
 
             # --------------------------------------------------
@@ -252,4 +250,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-#CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all.log  2>&1 &
+#CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all.log  2>&1 &

@@ -27,7 +27,6 @@ from sklearn.manifold import TSNE
 from umap import UMAP
 from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
 # ============================================================
 # PATHS
 # ============================================================

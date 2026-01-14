@@ -34,7 +34,7 @@ class HAVOCModelLoader:
             self.model_name,
             device_map="auto",              # ✅ correct
             torch_dtype=self.torch_dtype,
-            trust_remote_code=self.trust_remote_code,
+            trust_remote_code=self.trust_remote_code
         )
         self.model.eval()
         return self.model

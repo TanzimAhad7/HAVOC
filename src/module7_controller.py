@@ -52,9 +52,6 @@ from module3_optimus_V_scoring import optimusV
 from module5_concept_fuzzing import fuzz_sample
 from module6_Steering import steer_hidden_state
 from module3_optimus_V_scoring import extract_activation as _extract_act_m3
-
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
-
 # ============================================================
 # (A) ATTACKER MODE (EVALUATION CONTROL)
 # ============================================================

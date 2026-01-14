@@ -29,7 +29,7 @@ from module6_Steering import steer_hidden_state
 from module7_controller import STEER_TEMPERATURE, STEER_TOP_P
 from safe_decoding import SafeDecodingHAVOC, SafeDecodingConfig
 
-MODEL_NAME: str = "meta-llama/Meta-Llama-3-8B-Instruct"
+MODEL_NAME: str = "mistralai/Mistral-7B-Instruct-v0.3" #"meta-llama/Meta-Llama-3-8B-Instruct"
 DEVICE: str = "cuda"
 MAX_NEW_TOKENS = 256  # example
 
@@ -67,6 +67,7 @@ class LatentGameOrchestrator:
         habocLoader = HAVOCModelLoader(model_name=MODEL_NAME)
         self.tokenizer = habocLoader.load_tokenizer()
         self.model = habocLoader.load_model()
+        self.model.to(DEVICE)
         # ======================================================
         # PATCH 2: Response → Attacker feedback projection
         # ======================================================
@@ -79,14 +80,15 @@ class LatentGameOrchestrator:
         self.RESPONSE_FEEDBACK_PROJ /= (
             np.linalg.norm(self.RESPONSE_FEEDBACK_PROJ, axis=0, keepdims=True) + 1e-9
         )
+        # Initialise feedback direction from previous round
+        self.prev_response_dir = None
 
 
     @staticmethod
     def _l2_normalize(x: np.ndarray, eps: float = 1e-9) -> np.ndarray:
         return x / (np.linalg.norm(x) + eps)
-    
-    def steer_latent_safe(self, fP: np.ndarray, alpha: float, beta: float):
 
+    def harm_jb_alignment(self, fP: np.ndarray):
         fP_u = self._l2_normalize(fP)
 
         if self.W is not None and self.mu_HJ is not None:
@@ -105,12 +107,17 @@ class LatentGameOrchestrator:
         r_harm = float(np.clip(np.dot(fP_s, vD_s), 0.0, 1.0))
         r_jb   = float(np.clip(np.dot(fP_s, vJ_s), 0.0, 1.0))
 
+        return r_harm, r_jb, fP_s, vD_s, vJ_s
+    
+    def steer_latent_safe(self, fP: np.ndarray, alpha: float, beta: float):
+
+        r_harm, r_jb, fP_s, vD_s, vJ_s = self.harm_jb_alignment(fP)
+
         fP_safe = (
             fP_s
             - alpha * r_jb * vJ_s
             - beta * r_harm * vD_s
         )
-
         fP_safe = self._l2_normalize(fP_safe)
 
         # back-project to model space if needed
@@ -223,9 +230,10 @@ class LatentGameOrchestrator:
         """
         Apply SafeDecoding to logits.
         """
-        device = next(lm_head.parameters()).device
+        # device = next(lm_head.parameters()).device
 
-        fP_t = torch.tensor(fP, device=device, dtype=torch.float32)
+          # Convert numpy latent vector to torch tensor on correct device
+        fP_t = torch.as_tensor(fP, device=DEVICE, dtype=torch.float16)
 
         # Alignment with harmful direction
         unsafe_alignment = max(0.0, float(np.dot(fP, self.v_direct)))
@@ -276,8 +284,6 @@ class LatentGameOrchestrator:
             logits_safe, _ = self.safe_decoding_logits(
                 fP=fP,
                 lm_head=self.model.lm_head,
-                v_direct=v_direct,
-                strength=strength,
                 risk=risk,
             )
 
@@ -327,6 +333,7 @@ class LatentGameOrchestrator:
         round_logs: List[Dict[str, Any]] = []
         stable = False
         round_idx = 0
+        response_dir = None
 
         # --------------------------------------------------------
         # Main attacker–defender loop
@@ -340,12 +347,13 @@ class LatentGameOrchestrator:
             # ======================================================
             # PATCH 2: Combined defender + response steering
             # ======================================================
+            # Combine defender direction and previous response feedback
             combined_steer = self.defence_policy.last_delta_dir
 
-            if combined_steer is not None:
-                combined_steer = combined_steer + 0.3 * response_dir
+            if combined_steer is not None and self.prev_response_dir is not None:
+                combined_steer = combined_steer + 0.3 * self.prev_response_dir
                 combined_steer = combined_steer / (np.linalg.norm(combined_steer) + 1e-9)
-
+            
             best_prompt, best_score, attack_traj = controller.run(
                 steer_vector=combined_steer,
                 steer_alpha=self.defence_policy.strength,
@@ -362,37 +370,40 @@ class LatentGameOrchestrator:
             defended_fP = self.defence_policy.apply_intervention(fP)
             risk_def = self.defence_policy.compute_risk(defended_fP)
 
-            if self.combined_risk:
-                # Combine havoc risk and safeDecoding alignment-based risk
-                unsafe_alignment = max(0.0, np.dot(fP, self.v_direct))
-                combined_risk = max(
-                    risk_def,
-                    self.defence_policy.strength * unsafe_alignment
-                )
-                self.defence_policy.update_policy(combined_risk)
-            else:
-                # Update adaptive gain λ
-                self.defence_policy.update_policy(risk_def)
+            # if self.combined_risk:
+            #     # Combine havoc risk and safeDecoding alignment-based risk
+            #     unsafe_alignment = max(0.0, np.dot(fP, self.v_direct))
+            #     combined_risk = max(
+            #         risk_def,
+            #         self.defence_policy.strength * unsafe_alignment
+            #     )
+            #     self.defence_policy.update_policy(combined_risk)
+            # else:
+            #     # Update adaptive gain λ
+            #     self.defence_policy.update_policy(risk_def)
 
             ## Apply SafeDecoding adjustment to logits
-            # safe_response1 = self.generate_safe_response(
-            #     prompt=best_prompt,
-            #     v_direct=self.v_direct,
-            #     strength=self.defence_policy.strength,
-            #     risk = risk_def,
-            #     layer=self.layer,
-            #     max_new_tokens=64,
-            #     device=DEVICE,
-            # )
-            # print("SAFE RESPONSE1:\n", safe_response1)
+            safe_response1 = self.generate_safe_response(
+                prompt=best_prompt,
+                v_direct=self.v_direct,
+                strength=self.defence_policy.strength,
+                risk = risk_def,
+                layer=self.layer,
+                max_new_tokens=64,
+                device=DEVICE,
+            )
+            print("SAFE RESPONSE1:\n", safe_response1)
 
-            # cfg = SafeDecodingConfig(alpha=1.2, first_m=8, top_k=20, do_sample=False)
-            # sd = SafeDecodingHAVOC(self.model, self.tokenizer, cfg=cfg, verbose=True)
+            cfg = SafeDecodingConfig(alpha=1.2, first_m=8, top_k=20, do_sample=False)
+            sd = SafeDecodingHAVOC(self.model, self.tokenizer, cfg=cfg, verbose=True)
 
-            # inputs = self.tokenizer(best_prompt, return_tensors="pt")
-            # safe_response1, n = sd.generate(inputs, risk=risk_def, r_harm=r_harm, r_jb=r_jb)
+            inputs = self.tokenizer(best_prompt, return_tensors="pt")
 
-            # print("SAFE RESPONSE1:\n", safe_response1)
+            r_harm, r_jb, _, _, _ = self.harm_jb_alignment(fP)
+
+            safeDecoding_response, n = sd.generate(inputs, risk=risk_def, r_harm=r_harm, r_jb=r_jb)
+
+            print("SAFE DECODING RESPONSE:\n", safeDecoding_response)
 
             # ------------------------------
             # Strict-mode steering escalation
@@ -457,6 +468,8 @@ class LatentGameOrchestrator:
             # Project response behavior into latent space
             response_dir = self.RESPONSE_FEEDBACK_PROJ @ response_vec
             response_dir = response_dir / (np.linalg.norm(response_dir) + 1e-9)
+            # Store for next round
+            self.prev_response_dir = response_dir
 
             # Detect attacker learning signals
             if response_meta["semantic_shift"] < 0.2:
@@ -481,7 +494,7 @@ class LatentGameOrchestrator:
             # ==============================
             # (B.1) DECODE DEFENDED ACTIVATION (TRUE)
             # ==============================
-            defended_prompt_text = ""
+            defended_response_text = ""
             try:
                 if best_prompt and defended_fP is not None:
                     rewriter = controller.rewriter
@@ -507,9 +520,9 @@ class LatentGameOrchestrator:
                         )
 
                     if decodes:
-                        defended_prompt_text = decodes[0]
+                        defended_response_text = decodes[0]
             except Exception:
-                defended_prompt_text = ""
+                defended_response_text = ""
 
             # ==============================
             # (B.2) LOG DEFENSE METADATA (TRUE)
@@ -545,11 +558,12 @@ class LatentGameOrchestrator:
                 "r_def": float(risk_def),
                 "defence_strength": float(self.defence_policy.strength),
                 "attack_trajectory": attack_traj,
-                "defended_prompt": defended_prompt_text,
+                "defended_response": defended_response_text,
                 "defence_meta": defence_meta,
                 "safe_response_no_feedback_to_defender": safe_response1,
                 "safe_response_as_feedback_to_defender": safe_response2,
                 "response_meta": response_meta,
+                "safeDecoding_response": safeDecoding_response
             })
 
             # ==============================

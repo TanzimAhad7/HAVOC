@@ -17,8 +17,6 @@ import torch
 from contextlib import contextmanager
 from module1_Activation_Extraction import PARENT_PATH
 
-PARENT_PATH = "/home/tahad/HAVOC/HAVOC"
-
 __all__ = ["refine_vectors", "steer_in_direct_space", "steer_hidden_state"]
 
 # ----------------------------------------
