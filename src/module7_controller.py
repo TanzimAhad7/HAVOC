@@ -172,7 +172,6 @@ class SafeRewriterLLM:
 
     def __init__(
         self,
-        model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct",
         device: str = "cuda",
         bias_strength: float = CONCEPT_BIAS_STRENGTH,
     ):
@@ -193,7 +192,7 @@ class SafeRewriterLLM:
 
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
-        habocLoader = HAVOCModelLoader(model_name=model_name)
+        habocLoader = HAVOCModelLoader()
         self.tokenizer = habocLoader.load_tokenizer()
         self.model = habocLoader.load_model()
          #AutoTokenizer.from_pretrained(model_name, use_fast=False)
@@ -337,8 +336,7 @@ class HAVOC_Controller:
         max_iters: int = 20,
         rewrite_candidates: int = DEFAULT_REWRITE_CANDIDATES,
         seed: int = 0,
-        optimus_threshold: float = 0.35,
-        model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct",
+        optimus_threshold: float = 0.35
     ):
         self.intent = intent
         self.layer = int(layer)
@@ -368,7 +366,7 @@ class HAVOC_Controller:
         self.fI_cached = _extract_act_m3(self.intent, layer=self.layer)
 
         # Generator
-        self.rewriter = SafeRewriterLLM(model_name=model_name, bias_strength=CONCEPT_BIAS_STRENGTH)
+        self.rewriter = SafeRewriterLLM(bias_strength=CONCEPT_BIAS_STRENGTH)
 
         # Bookkeeping
         self.best_prompt: Optional[str] = None

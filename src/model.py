@@ -5,7 +5,7 @@ import torch
 class HAVOCModelLoader:
     def __init__(
         self,
-        model_name: str,
+        model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct", #"mistralai/Mistral-7B-Instruct-v0.3"
         torch_dtype=torch.float16,
         trust_remote_code: bool = True,
         use_fast_tokenizer: bool = False,
@@ -32,7 +32,7 @@ class HAVOCModelLoader:
     def load_model(self):
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            device_map="auto",              # ✅ correct
+            device_map={"": "cuda"},              # ✅ correct
             torch_dtype=self.torch_dtype,
             trust_remote_code=self.trust_remote_code
         )

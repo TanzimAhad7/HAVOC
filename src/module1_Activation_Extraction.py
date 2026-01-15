@@ -30,6 +30,7 @@ import numpy as np
 import random
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from model import HAVOCModelLoader
 
 PARENT_PATH = "/home/ihossain/ISMAIL/SUPREMELAB/HAVOC"
 
@@ -42,11 +43,11 @@ device = torch.device("cuda")
 # ============================================================
 #  FILE PATHS — Hardcoded dataset paths for static extraction
 # ============================================================
-alpaca_file    = f"{PARENT_PATH}/dataset/alpaca_benign.json"
+alpaca_file   = f"{PARENT_PATH}/dataset/alpaca_benign.json"
 direct_file   = f"{PARENT_PATH}/dataset/advbench_anchor.json"
 composed_file = f"{PARENT_PATH}/dataset/wildcomposed_composed.json"
 
-out_dir = f"{PARENT_PATH}/output/activations"
+out_dir = f"{PARENT_PATH}/output/llama/activations"
 os.makedirs(out_dir, exist_ok=True)
 
 # ============================================================
@@ -123,15 +124,16 @@ composed_prompts = pick_anchors(composed_prompts, "composed")
 # ============================================================
 #  LOAD LLaMA‑3 8B INSTRUCT MODEL
 # ============================================================
-model_name = "mistralai/Mistral-7B-Instruct-v0.3" #"meta-llama/Meta-Llama-3-8B-Instruct"
+# model_name = "mistralai/Mistral-7B-Instruct-v0.3" #"meta-llama/Meta-Llama-3-8B-Instruct"
 
 # Load tokenizer and model once to reuse for both static and dynamic extractions
-tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16,
-    device_map={"": "cuda"}
-)
+# tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_name,
+#     torch_dtype=torch.float16,
+#     device_map={"": "cuda"}
+# )
+model, tokenizer = HAVOCModelLoader().load()  # ✅ correct
 
 # Extract number of transformer layers (for reference)
 num_layers = len(model.model.layers)
@@ -272,4 +274,4 @@ def extract_activation_dynamic(prompt: str, layer: int = 20) -> np.ndarray:
 if __name__ == "__main__":
     run_static_extraction()
 
-# CUDA_VISIBLE_DEVICES=3 nohup python module1_Activation_Extraction.py > /home/tahad/HAVOC/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=2 nohup python module1_Activation_Extraction.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module1_Activation_Extraction.log  2>&1 &

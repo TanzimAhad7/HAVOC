@@ -64,7 +64,7 @@ class LatentGameOrchestrator:
         self.verbose = bool(verbose)
         self.combined_risk = False  # Whether to combine risks
 
-        habocLoader = HAVOCModelLoader(model_name=MODEL_NAME)
+        habocLoader = HAVOCModelLoader()
         self.tokenizer = habocLoader.load_tokenizer()
         self.model = habocLoader.load_model()
         self.model.to(DEVICE)

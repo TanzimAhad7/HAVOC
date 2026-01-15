@@ -30,9 +30,9 @@ from module1_Activation_Extraction import PARENT_PATH
 # ============================================================
 # PATHS
 # ============================================================
-ACT_DIR = f"{PARENT_PATH}/output/activations"
-OUT_DIR = f"{PARENT_PATH}/output/analysis/module4"
-SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
+ACT_DIR = f"{PARENT_PATH}/output/llama/activations"
+OUT_DIR = f"{PARENT_PATH}/output/llama/analysis/module4"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/llama/subspace"
 
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(SUBSPACE_DIR, exist_ok=True)
@@ -179,4 +179,4 @@ if __name__ == "__main__":
     run_direct_space_construction(LAYER, TOP_K)
 
 
-#CUDA_VISIBLE_DEVICES=3 nohup python module4_direct_representaiton_space.py > /home/tahad/HAVOC/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &
+#CUDA_VISIBLE_DEVICES=2 nohup python module4_direct_representaiton_space.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &
