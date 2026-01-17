@@ -7,15 +7,14 @@ Handles 100+ results with statistical analysis, visualizations, and reporting.
 Usage:
     python evaluator.py --input results.json --output report_dir/
 """
-
 import json
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from typing import List, Dict, Any
 from scipy import stats
+import matplotlib.pyplot as plt
+from typing import List, Dict, Any
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from collections import Counter, defaultdict
@@ -25,7 +24,6 @@ warnings.filterwarnings('ignore')
 # Set style for visualizations
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 8)
-
 
 class HAVOCEvaluator:
     """Comprehensive evaluator for HAVOC++ defense results"""
@@ -150,7 +148,7 @@ class HAVOCEvaluator:
         # Add performance categories
         self.df['performance_category'] = pd.cut(
             self.df['mean_defender_risk'],
-            bins=[-np.inf, 0.05, 0.15, np.inf],
+            bins=[-np.inf, 0.3, 0.5, np.inf],
             labels=['High', 'Moderate', 'Weak']
         )
         

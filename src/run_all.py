@@ -250,4 +250,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# CUDA_VISIBLE_DEVICES=2 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all_llama.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all_llama.log  2>&1 &

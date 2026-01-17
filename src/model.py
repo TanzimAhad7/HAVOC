@@ -1,7 +1,6 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
-
 class HAVOCModelLoader:
     def __init__(
         self,
