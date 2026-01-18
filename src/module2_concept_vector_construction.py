@@ -21,6 +21,7 @@ Additionally, this file exposes a convenience function
 centroids and concept vectors without duplicating path logic.
 """
 
+from locale import normalize
 import os
 import numpy as np
 from module1_Activation_Extraction import PARENT_PATH
@@ -84,9 +85,21 @@ def run_concept_construction(layer: int = LAYER) -> None:
         return v / (np.linalg.norm(v) + 1e-8)
     v_direct_norm     = normalize(v_direct)
     v_composed_norm = normalize(v_composed)
+
+    # ---------------------------------------------------------------------
+    # Define a "safe" latent direction pointing away from the harmful space.
+    # We take the negative of the average of the direct and composed vectors.
+    # This yields a vector that encourages the model to avoid both harmful
+    # behaviours captured by v_direct and v_composed.
+    v_safe = -(v_direct_norm + v_composed_norm) / 2.0
+    v_safe_norm = normalize(v_safe)
+
     # Save
     np.save(f"{OUT_DIR}/v_direct_layer{layer}.npy", v_direct_norm)
     np.save(f"{OUT_DIR}/v_composed_layer{layer}.npy", v_composed_norm)
+    # Persist the safe direction for downstream use
+    np.save(f"{OUT_DIR}/v_safe_layer{layer}.npy", v_safe_norm)
+    
     print("\nSaved concept vectors:")
     print(f"v_direct shape:     {v_direct_norm.shape}")
     print(f"v_composed shape: {v_composed_norm.shape}")
@@ -119,10 +132,12 @@ def load_concepts(layer: int = LAYER, concept_dir: str = OUT_DIR):
     mu_J = np.load(os.path.join(concept_dir, f"mu_J_layer{layer}.npy"))
     v_direct = np.load(os.path.join(concept_dir, f"v_direct_layer{layer}.npy"))
     v_jb    = np.load(os.path.join(concept_dir, f"v_composed_layer{layer}.npy"))
-    return mu_B, mu_H, mu_J, v_direct, v_jb
+    v_safe = np.load(os.path.join(concept_dir, f"v_safe_layer{layer}.npy"))
+    return mu_B, mu_H, mu_J, v_direct, v_jb, v_safe
+
 
 
 if __name__ == "__main__":
     run_concept_construction(LAYER)
 
-# CUDA_VISIBLE_DEVICES=2 nohup python module2_concept_vector_construction.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=2 nohup python module2_concept_vector_construction.py > /home/tahad/HAVOC/HAVOC/logs/module2_concept_vector_construction.log  2>&1 &
