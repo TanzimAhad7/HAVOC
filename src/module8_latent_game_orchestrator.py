@@ -110,43 +110,48 @@ class LatentGameOrchestrator:
 
         return r_harm, r_jb, fP_s, vD_s, vJ_s
     
-    def steer_latent_safe(self, fP: np.ndarray, alpha: float, beta: float):
+    def steer_latent_safe(self, fP: np.ndarray, alpha: float, beta: float) -> np.ndarray:
+        """Project fP into the harm/jailbreak subspace, steer it, then back‑project."""
+        # 1. Normalize activation and project (points are mean‑centered, directions are not)
+        fP_u = self._l2_normalize(fP)
+        if self.W is not None and self.mu_HJ is not None:
+            fP_proj = self._l2_normalize(self.W @ (fP_u - self.mu_HJ))
+        elif self.W is not None:
+            fP_proj = self._l2_normalize(self.W @ fP_u)
+        else:
+            fP_proj = fP_u
 
-        r_harm, r_jb, fP_s, vD_s, vJ_s = self.harm_jb_alignment(fP)
-
-        fP_safe = (
-            fP_s
-            - alpha * r_jb * vJ_s
-            - beta * r_harm * vD_s
-        )
-
-        # --------------------------------------------------
-        # ADD SAFE-ANCHOR ATTRACTION (NEW, REQUIRED)
-        # --------------------------------------------------
-        if self.v_safe is not None:
-            if self.W is not None and self.mu_HJ is not None:
-                vS = self._l2_normalize(self.W @ self.v_safe)
-            elif self.W is not None:
-                vS = self._l2_normalize(self.W @ self.v_safe)
-            else:
-                vS = self._l2_normalize(self.v_safe)
-
-            # γ controls how strongly we pull toward safe semantics
-            gamma = 0.30
-            fP_safe = fP_safe + gamma * vS
-
-
-        fP_safe = self._l2_normalize(fP_safe)
-
-        # back-project to model space if needed
+        # 2. Project concept directions
         if self.W is not None:
-            if self.W is not None and self.mu_HJ is not None:
-                fP_safe = self.mu_HJ + self.W.T @ fP_safe
-            elif self.W is not None:
-                fP_safe = self.W.T @ fP_safe
+            vD_proj = self._l2_normalize(self.W @ self.v_direct)
+            vJ_proj = self._l2_normalize(self.W @ self.v_jb)
+            vS_proj = self._l2_normalize(self.W @ self.v_safe) if self.v_safe is not None else None
+        else:
+            vD_proj = self._l2_normalize(self.v_direct)
+            vJ_proj = self._l2_normalize(self.v_jb)
+            vS_proj = self._l2_normalize(self.v_safe) if self.v_safe is not None else None
 
+        # 3. Compute alignments in projected space
+        r_harm = max(0.0, min(1.0, float(np.dot(fP_proj, vD_proj))))
+        r_jb   = max(0.0, min(1.0, float(np.dot(fP_proj, vJ_proj))))
 
-        return fP_safe
+        # 4. Steer within subspace
+        z_safe = fP_proj - alpha * r_jb * vJ_proj - beta * r_harm * vD_proj
+        if vS_proj is not None:
+            gamma = 0.30
+            z_safe = z_safe + gamma * vS_proj
+        z_safe = self._l2_normalize(z_safe)
+
+        # 5. Back‐project once to the full hidden space
+        if self.W is not None and self.mu_HJ is not None:
+            x_safe = self.mu_HJ + np.dot(self.W.T, z_safe)
+        elif self.W is not None:
+            x_safe = np.dot(self.W.T, z_safe)
+        else:
+            x_safe = z_safe
+
+        return self._l2_normalize(x_safe)
+
 
     def make_steering_hook(self, fP_safe: torch.Tensor):
 
@@ -189,8 +194,9 @@ class LatentGameOrchestrator:
         # --------------------
         # Register hook
         # --------------------
-        hook_handle = self.model.model.layers[self.layer].register_forward_hook(
-            self.make_steering_hook(fP_safe)
+        layer_idx = max(0, int(self.layer) - 1)  # hidden_states index -> transformer block index
+        hook_handle = self.model.model.layers[layer_idx].register_forward_hook(
+                self.make_steering_hook(fP_safe)
         )
 
         # --------------------
@@ -554,7 +560,7 @@ class LatentGameOrchestrator:
 
                     with steer_hidden_state(
                         model=rewriter.model,
-                        layer_idx=self.layer,
+                        layer_idx=max(0, int(self.layer) - 1),
                         v_comp=delta,
                         alpha=1.0,
                     ):
