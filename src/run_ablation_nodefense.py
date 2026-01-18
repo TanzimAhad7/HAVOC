@@ -1,19 +1,51 @@
 #!/usr/bin/env python3
 """
-run_all.py — HAVOC++ Full Evaluation (Semantic Logging, FINAL)
-==============================================================
+3. run_ablation_nodefense.py — No Defence Baseline Evaluation
+=============================================================
 
-This script orchestrates the full HAVOC++ attacker–defender game over
-all evaluation intents.
+This script runs the HAVOC++ evaluation with **no latent defence**. It
+should be executed **after** the full adaptive and static defence
+experiments. The no‑defence baseline establishes how high the
+attacker's risk remains when the defender does not intervene in the
+latent space.
 
-Key properties:
-- Logs ONLY the best attacker prompt per round
-- Clearly distinguishes attacker vs defender quantities
-- Clearly distinguishes per-round vs terminal outcomes
-- Produces reviewer-friendly, self-descriptive JSONL traces
+The approach used here leverages the existing ``AdaptiveDefensePolicy``
+but configures it such that it never applies any latent intervention:
 
-This is the PRIMARY experiment driver for the HAVOC++ paper.
+* ``risk_threshold`` is set to a very large value, ensuring that the
+  defender never enters the intervention branch. Since the risk
+  function produces values in the range [0, 1], a threshold of 1000
+  effectively disables any defence.
+* ``base_strength`` is zero and ``adapt_up = adapt_down = 1.0``, so the
+  latent intervention magnitude (λ) remains at zero throughout the
+  game. Even if the defender were triggered, λ=0 would produce a
+  no‑op correction.
+
+The rest of the pipeline (stability controller, orchestrator, logging) is
+identical to the other evaluation scripts. The results are written to
+``output/llama/havoc_traces_nodefense.jsonl``.
+
+Usage:
+------
+Run this script after ``run_ablation_full.py`` and ``run_ablation_static.py``
+to produce the no‑defence baseline. Example invocation:
+
+```
+python run_ablation_nodefense.py
+```
+
+Execution order:
+----------------
+1. **run_ablation_full.py** – full adaptive defence evaluation
+2. **run_ablation_static.py** – static (fixed‑λ) defence baseline
+3. **run_ablation_nodefense.py** – no defence baseline
+4. **plot_ablation_results.py** – plot results for a single condition
+5. **plot_ablation_compare.py** – compare risk across conditions
+
+Ensure that Modules 1 and 2 have been run so that concept vectors and
+subspace files exist in the expected locations.
 """
+
 import json
 import os
 from tqdm import tqdm
@@ -26,59 +58,70 @@ from module9_adaptive_defense_policy import AdaptiveDefensePolicy
 from module10_stability_controller import StabilityController
 from module1_Activation_Extraction import PARENT_PATH
 
-# Disable gradients globally (pure inference / control loop)
+# Disable gradients globally
 torch.set_grad_enabled(False)
 
-# ============================================================
-# CONFIG
-# ============================================================
+###############################################################################
+# Configuration
+###############################################################################
 
-OUTPUT_PATH = f"{PARENT_PATH}/output/llama/havoc_traces.jsonl"
-EVAL_INTENTS_PATH = f"{PARENT_PATH}/dataset/advbench_eval.json"
+# Output file for no defence baseline
+OUTPUT_PATH = os.path.join(PARENT_PATH, "output/llama/havoc_traces_nodefense.jsonl")
 
+# Intents file
+EVAL_INTENTS_PATH = os.path.join(PARENT_PATH, "dataset/advbench_eval.json")
+
+# Selected layer
 LAYER = 20
+
+# Maximum rounds
 MAX_ROUNDS = 30
 
-# -------------------------------
-# Stability Controller (Module 10)
-# -------------------------------
+###############################################################################
+# Stability controller parameters (same as other evaluations)
+###############################################################################
 WINDOW = 7
 MIN_SUPPRESSED = 4
 SUPPRESSION_TAU = 0.10
 ESCALATION_EPS = 0.01
 
-# -------------------------------
-# Defender (Module 9)
-# -------------------------------
-RISK_THRESHOLD = 0.0
-LAMBDA_INIT = 0.1
-ADAPT_UP = 1.2
-ADAPT_DOWN = 0.95
+###############################################################################
+# No‑defence policy parameters
+###############################################################################
 
+# Set the risk threshold to a large value to disable interventions. Since the
+# latent risk values lie in [0, 1], this value will never be exceeded.
+RISK_THRESHOLD = 1000.0
+
+# Base strength of the latent intervention (λ). Set to zero so that
+# even if an intervention were triggered, it would have no effect.
+BASE_STRENGTH = 0.0
+
+# Adaptation factors set to one to keep λ constant at zero.
+ADAPT_UP = 1.0
+ADAPT_DOWN = 1.0
+
+###############################################################################
+# Main routine
+###############################################################################
 
 def main() -> None:
-    """Run the full HAVOC++ evaluation over all intents."""
-
-    print("[*] Loading frozen latent geometry...")
-    #mu_B, mu_H, mu_J, v_direct, v_jb = load_concepts(layer=LAYER)
-    # Load the safe direction in addition to the direct and composed vectors.
-    mu_B, mu_H, mu_J, v_direct, v_jb, v_safe = load_concepts(layer=LAYER)
+    """Run the HAVOC++ evaluation with no latent defence."""
+    print("[*] Loading latent geometry for no defence baseline…")
+    mu_B, mu_H, mu_J, v_direct, v_jb = load_concepts(layer=LAYER)
     mu_HJ, W = load_direct_space()
 
-    print("[*] Loading evaluation intents...")
+    print("[*] Loading evaluation intents…")
     with open(EVAL_INTENTS_PATH, "r", encoding="utf-8") as f:
         intents = json.load(f)
 
-    # Reset output file
     if os.path.exists(OUTPUT_PATH):
         os.remove(OUTPUT_PATH)
 
-    print(f"[*] Writing results to: {OUTPUT_PATH}")
+    print(f"[*] Writing no‑defence results to: {OUTPUT_PATH}")
 
     with open(OUTPUT_PATH, "a", encoding="utf-8") as out:
-
-        for item in tqdm(intents, desc="HAVOC++ Evaluation", position=0):
-
+        for item in tqdm(intents, desc="No Defence Evaluation", position=0):
             intent_id = item.get("id")
             intent_text = item.get("intent") or item.get("prompt") or ""
 
@@ -88,26 +131,17 @@ def main() -> None:
             print(f"[INTENT TEXT] {preview}")
             print("=" * 80)
 
-            # --------------------------------------------------
-            # Instantiate Defender and Controllers
-            # --------------------------------------------------
+            # Configure the defence policy to never intervene
             defender = AdaptiveDefensePolicy(
                 v_direct=v_direct,
                 v_jb=v_jb,
-                v_safe=v_safe,
                 mu_HJ=mu_HJ,
                 W=W,
                 risk_threshold=RISK_THRESHOLD,
-                base_strength=LAMBDA_INIT,
+                base_strength=BASE_STRENGTH,
                 adapt_up=ADAPT_UP,
                 adapt_down=ADAPT_DOWN,
             )
-
-            print(
-                "[OK] AdaptiveDefensePolicy initialized with v_safe:",
-                v_safe is not None
-            )
-
 
             stability = StabilityController(
                 window=WINDOW,
@@ -125,120 +159,65 @@ def main() -> None:
                 W=W,
                 defence_policy=defender,
                 stability_controller=stability,
-                v_safe=v_safe,
                 max_iters=MAX_ROUNDS,
                 layer=LAYER,
                 verbose=False,
             )
 
-            # --------------------------------------------------
-            # Run attacker–defender game
-            # --------------------------------------------------
             result = orchestrator.run()[0]
 
-            # --------------------------------------------------
-            # TOP-LEVEL RECORD (ONE PER INTENT)
-            # --------------------------------------------------
             record = {
-                # Experiment identifier
-                "policy_name": "HAVOC++_adaptive_defense",
-
-                # Dataset metadata
+                "policy_name": "no_defence",
                 "intent_id": intent_id,
                 "original_intent_text": intent_text,
-
-                # Latent configuration
                 "latent_layer_index": LAYER,
-
-                # Game outcome
                 "total_rounds_executed": result["rounds"],
-
-                # Attacker’s strongest prompt in the TERMINAL round
                 "terminal_attacker_prompt": result["final_prompt"],
                 "terminal_attacker_score": result["final_score"],
-
-                # Convergence diagnostics (Module 10)
                 "convergence_info": stability.get_convergence_info(),
-
-                # Per-round logs
                 "round_logs": [],
             }
 
             rounds = result.get("round_trajectories", [])
-
-            # --------------------------------------------------
-            # PER-ROUND LOGGING
-            # --------------------------------------------------
             for r in rounds:
-
                 attacker_trace = {
-                    # Attacker action sequence (fuzz / steer)
                     "attacker_actions": r["attack_trajectory"].get("actions", []),
-
-                    # Optimus-V scores observed during search
                     "optimus_scores_per_action": r["attack_trajectory"].get("optimus_scores", []),
                 }
-
                 record["round_logs"].append({
-                    # Round index (0-based)
                     "round_index": r["round"],
-
-                    # Attacker capability before defense
                     "attacker_risk_raw": r["r_raw"],
-
-                    # Residual risk after defense
                     "defender_risk_residual": r["r_def"],
-
-                    # Defense strength λ
                     "defender_lambda": r["defence_strength"],
-
-                    # Best attacker prompt for THIS round
                     "best_attacker_prompt": r["best_prompt"],
-
-                    # Optimus-V score of that prompt
                     "best_attacker_score": r["best_score"],
-
-                    # Compact attacker search trace
                     "attacker_search_trace": attacker_trace,
-
-                    # Decoded defended text (interpretability only)
                     "decoded_defended_response": r.get("defended_response", ""),
-
-                    # Defense metadata (source, direction, λ, etc.)
                     "defender_metadata": r.get("defence_meta", {}),
-
                     "safe_response_no_feedback_to_defender": r.get("safe_response_no_feedback_to_defender", ""),
                     "safe_response_as_feedback_to_defender": r.get("safe_response_as_feedback_to_defender", ""),
                     "response_meta": r.get("response_meta", {}),
-                    "safeDecoding_response": r.get("safeDecoding_response", "")
+                    "safeDecoding_response": r.get("safeDecoding_response", ""),
                 })
 
-            # --------------------------------------------------
-            # SUMMARY STATISTICS (PER INTENT)
-            # --------------------------------------------------
             if rounds:
                 record["mean_best_attacker_score_per_round"] = sum(
                     r["best_score"] for r in rounds
                 ) / len(rounds)
-
                 record["mean_attacker_risk_raw"] = sum(
                     r["r_raw"] for r in rounds
                 ) / len(rounds)
-
                 record["mean_defender_risk_residual"] = sum(
                     r["r_def"] for r in rounds
                 ) / len(rounds)
-
                 record["mean_defender_lambda"] = sum(
                     r["defence_strength"] for r in rounds
                 ) / len(rounds)
-
                 opt_sum, opt_cnt = 0.0, 0
                 for r in rounds:
                     scores = r["attack_trajectory"].get("optimus_scores", [])
                     opt_sum += sum(scores)
                     opt_cnt += len(scores)
-
                 record["mean_optimus_score_over_all_actions"] = (
                     opt_sum / opt_cnt if opt_cnt else 0.0
                 )
@@ -249,15 +228,11 @@ def main() -> None:
                 record["mean_defender_lambda"] = 0.0
                 record["mean_optimus_score_over_all_actions"] = 0.0
 
-            # --------------------------------------------------
-            # WRITE IMMEDIATELY (NO BUFFERING)
-            # --------------------------------------------------
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
             out.flush()
 
-    print("\n[OK] HAVOC++ evaluation complete.")
+    print("\n[OK] No‑defence evaluation complete.")
+
 
 if __name__ == "__main__":
     main()
-
-# CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all_llama.log  2>&1 &

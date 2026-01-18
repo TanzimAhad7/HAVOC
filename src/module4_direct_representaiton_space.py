@@ -179,4 +179,4 @@ if __name__ == "__main__":
     run_direct_space_construction(LAYER, TOP_K)
 
 
-#CUDA_VISIBLE_DEVICES=2 nohup python module4_direct_representaiton_space.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &
+#CUDA_VISIBLE_DEVICES=2 nohup python module4_direct_representaiton_space.py > /home/tahad/HAVOC/HAVOC/logs/module4_direct_representaiton_space.log  2>&1 &

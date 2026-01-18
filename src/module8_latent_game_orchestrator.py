@@ -34,11 +34,9 @@ DEVICE: str = "cuda"
 MAX_NEW_TOKENS = 256  # example
 
 class LatentGameOrchestrator:
-    """Run the HAVOC++ attacker–defender game."""
-
     def __init__(
         self,
-        intents: List[str],
+        intents: list,
         v_direct: np.ndarray,
         v_jb: np.ndarray,
         mu_HJ: Optional[np.ndarray],
@@ -46,14 +44,17 @@ class LatentGameOrchestrator:
         defence_policy: AdaptiveDefensePolicy,
         stability_controller: StabilityController,
         *,
+        v_safe: Optional[np.ndarray] = None,   # ← keyword-only
         max_iters: int = 30,
         layer: int = 20,
         attacker_seed: int = 0,
         verbose: bool = False,
-    ) -> None:
+    ):
+
         self.intents = intents
         self.v_direct = v_direct
         self.v_jb = v_jb
+        self.v_safe = v_safe
         self.mu_HJ = mu_HJ
         self.W = W
         self.defence_policy = defence_policy
@@ -118,6 +119,23 @@ class LatentGameOrchestrator:
             - alpha * r_jb * vJ_s
             - beta * r_harm * vD_s
         )
+
+        # --------------------------------------------------
+        # ADD SAFE-ANCHOR ATTRACTION (NEW, REQUIRED)
+        # --------------------------------------------------
+        if self.v_safe is not None:
+            if self.W is not None and self.mu_HJ is not None:
+                vS = self._l2_normalize(self.W @ self.v_safe)
+            elif self.W is not None:
+                vS = self._l2_normalize(self.W @ self.v_safe)
+            else:
+                vS = self._l2_normalize(self.v_safe)
+
+            # γ controls how strongly we pull toward safe semantics
+            gamma = 0.30
+            fP_safe = fP_safe + gamma * vS
+
+
         fP_safe = self._l2_normalize(fP_safe)
 
         # back-project to model space if needed
@@ -247,6 +265,24 @@ class LatentGameOrchestrator:
         else:
             # Havoc SafeDecoding adjustment
             logits_safe = logits - max(0, risk)
+        
+        # Apply an additional bias toward the safe direction if available.
+        # This encourages generation to move away from harmful latent directions.
+        if self.v_safe is not None:
+            # Convert the safe vector to a torch tensor on the correct device.
+            v_s = torch.tensor(
+                self.v_safe,
+                device=DEVICE,
+                dtype=torch.float32,
+            )
+            # Compute a bias term for each vocabulary item by projecting the
+            # embedding matrix onto the safe vector.
+            emb = lm_head.weight.detach()  # (vocab_size, hidden_dim)
+            safe_bias = emb @ v_s  # (vocab_size,)
+            # Scale the bias by the current defence strength. A higher λ will
+            # push the distribution more strongly toward the safe subspace.
+            logits_safe = logits_safe + float(self.defence_policy.strength) * safe_bias
+
 
         return logits_safe, unsafe_alignment
 

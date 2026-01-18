@@ -85,6 +85,7 @@ class AdaptiveDefensePolicy:
         self,
         v_direct: np.ndarray,
         v_jb: np.ndarray,
+        v_safe: Optional[np.ndarray],
         *,
         mu_HJ: Optional[np.ndarray] = None,
         W: Optional[np.ndarray] = None,
