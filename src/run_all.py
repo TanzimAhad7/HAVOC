@@ -125,6 +125,7 @@ def main() -> None:
                 W=W,
                 defence_policy=defender,
                 stability_controller=stability,
+                v_safe=v_safe,
                 max_iters=MAX_ROUNDS,
                 layer=LAYER,
                 verbose=False,
@@ -259,4 +260,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/ihossain/ISMAIL/SUPREMELAB/HAVOC/logs/run_all_llama.log  2>&1 &
+# CUDA_VISIBLE_DEVICES=3 nohup python run_all.py > /home/tahad/HAVOC/HAVOC/logs/run_all_llama.log  2>&1 &

@@ -119,6 +119,23 @@ class LatentGameOrchestrator:
             - alpha * r_jb * vJ_s
             - beta * r_harm * vD_s
         )
+
+        # --------------------------------------------------
+        # ADD SAFE-ANCHOR ATTRACTION (NEW, REQUIRED)
+        # --------------------------------------------------
+        if self.v_safe is not None:
+            if self.W is not None and self.mu_HJ is not None:
+                vS = self._l2_normalize(self.W @ self.v_safe)
+            elif self.W is not None:
+                vS = self._l2_normalize(self.W @ self.v_safe)
+            else:
+                vS = self._l2_normalize(self.v_safe)
+
+            # γ controls how strongly we pull toward safe semantics
+            gamma = 0.30
+            fP_safe = fP_safe + gamma * vS
+
+
         fP_safe = self._l2_normalize(fP_safe)
 
         # back-project to model space if needed
