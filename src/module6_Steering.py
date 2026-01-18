@@ -22,10 +22,11 @@ __all__ = ["refine_vectors", "steer_in_direct_space", "steer_hidden_state"]
 # ----------------------------------------
 # Configuration and Paths
 # ----------------------------------------
-CONCEPT_DIR  = f"{PARENT_PATH}/output/concepts"
-SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
-FUZZED_DIR   = f"{PARENT_PATH}/output/fuzzed"
-STEERED_DIR  = f"{PARENT_PATH}/output/steered"
+CONCEPT_DIR  = f"{PARENT_PATH}/output/llama/concepts"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/llama/subspace"
+FUZZED_DIR   = f"{PARENT_PATH}/output/llama/fuzzed"
+STEERED_DIR  = f"{PARENT_PATH}/output/llama/steered"
+
 os.makedirs(STEERED_DIR, exist_ok=True)
 
 LAYER_ID      = 20
