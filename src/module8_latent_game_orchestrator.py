@@ -140,7 +140,11 @@ class LatentGameOrchestrator:
 
         # back-project to model space if needed
         if self.W is not None:
-            fP_safe = np.linalg.pinv(self.W) @ fP_safe
+            if self.W is not None and self.mu_HJ is not None:
+                fP_safe = self.mu_HJ + self.W.T @ fP_safe
+            elif self.W is not None:
+                fP_safe = self.W.T @ fP_safe
+
 
         return fP_safe
 
@@ -153,9 +157,12 @@ class LatentGameOrchestrator:
             fP_safe_local = fP_safe.to(output.device).to(output.dtype)
 
             blend = 0.5
-            output[:, -1, :] = (
-                (1 - blend) * output[:, -1, :] + blend * fP_safe_local
-            )
+            #output[:, -1, :] = (
+            #    (1 - blend) * output[:, -1, :] + blend * fP_safe_local
+            #)
+
+            delta = fP_safe_local - output[:, -1, :]
+            output[:, -1, :] = output[:, -1, :] + blend * delta
 
             return output
 
@@ -277,8 +284,11 @@ class LatentGameOrchestrator:
             )
             # Compute a bias term for each vocabulary item by projecting the
             # embedding matrix onto the safe vector.
-            emb = lm_head.weight.detach()  # (vocab_size, hidden_dim)
-            safe_bias = emb @ v_s  # (vocab_size,)
+            emb = self.model.get_input_embeddings().weight.detach()
+            v_s = v_s.to(emb.dtype)
+            safe_bias = emb @ v_s
+            safe_bias = safe_bias.to(logits_safe.dtype)
+
             # Scale the bias by the current defence strength. A higher λ will
             # push the distribution more strongly toward the safe subspace.
             logits_safe = logits_safe + float(self.defence_policy.strength) * safe_bias

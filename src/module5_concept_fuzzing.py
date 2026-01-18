@@ -22,9 +22,10 @@ from module1_Activation_Extraction import PARENT_PATH
 __all__ = ["fuzz_sample", "main"]
 
 # Paths
-CONCEPT_DIR  = f"{PARENT_PATH}/output/concepts"
-SUBSPACE_DIR = f"{PARENT_PATH}/output/subspace"
-FUZZED_DIR   = f"{PARENT_PATH}/output/fuzzed"
+CONCEPT_DIR  = f"{PARENT_PATH}/output/llama/concepts"
+SUBSPACE_DIR = f"{PARENT_PATH}/output/llama/subspace"
+FUZZED_DIR   = f"{PARENT_PATH}/output/llama/fuzzed"
+
 os.makedirs(FUZZED_DIR, exist_ok=True)
 
 # Config (for batch fuzzing)
