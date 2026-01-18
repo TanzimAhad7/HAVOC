@@ -506,7 +506,7 @@ class HAVOC_Controller:
 
         with steer_hidden_state(
             model=self.rewriter.model,
-            layer_idx=self.layer,
+            layer_idx=self.layer - 1,
             v_comp=steer_vector,            # None => no hook effect
             alpha=float(steer_alpha),
         ):
