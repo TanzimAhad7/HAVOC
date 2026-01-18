@@ -240,7 +240,10 @@ class LatentGameOrchestrator:
         # Optional: embedding distance (coarse)
         fP_prompt = extract_activation_dynamic(prompt, layer=self.layer)
         fP_resp   = extract_activation_dynamic(response, layer=self.layer)
-        semantic_shift = float(1 - np.dot(fP_prompt, fP_resp))
+        
+        cos = np.clip(np.dot(fP_prompt, fP_resp), -1.0, 1.0)
+        semantic_shift = float(1.0 - (cos + 1.0) / 2.0)
+
 
         return {
             "is_refusal": float(is_refusal),
@@ -270,7 +273,9 @@ class LatentGameOrchestrator:
         unsafe_alignment = max(0.0, float(np.dot(fP, self.v_direct)))
 
         # Raw logits from LM head
-        logits = lm_head(fP_t)  # (vocab_size,)
+        #logits = lm_head(fP_t)  # (vocab_size,)
+        logits = self.model.lm_head(fP_t.unsqueeze(0)).squeeze(0)
+
 
         if not isHavoc:
             # SafeDecoding shift

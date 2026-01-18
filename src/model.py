@@ -31,7 +31,7 @@ class HAVOCModelLoader:
     def load_model(self):
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            device_map={"": "cuda"},              # ✅ correct
+            device_map={"": "cuda"},              
             torch_dtype=self.torch_dtype,
             trust_remote_code=self.trust_remote_code
         )
